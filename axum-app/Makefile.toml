@@ -1,6 +1,6 @@
 [tasks.build-zero]
 description = "Cross compile axum-app for Raspberry Pi Zero and copy binary to current directory"
-command = "cargo"
+command = "cross"
 args = ["build", "--release", "--target", "arm-unknown-linux-gnueabihf"]
 clear = true
 
