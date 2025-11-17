@@ -1,5 +1,0 @@
-[target.arm-unknown-linux-gnueabihf]
-linker = "arm-linux-gnueabihf-gcc"
-rustflags = [
-  "-C", "link-arg=-march=armv6",
-]
