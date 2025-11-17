@@ -3,7 +3,7 @@ use axum::{
     Router,
 };
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     // build our application with a single route
     let app = Router::new().route("/", get(|| async { "Hello, World!" }));
