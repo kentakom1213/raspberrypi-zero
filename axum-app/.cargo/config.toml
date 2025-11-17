@@ -1,7 +1,5 @@
-# .cargo/config.toml
 [target.arm-unknown-linux-gnueabihf]
-rustflags = ["-C", "target-cpu=arm1176jzf-s"]
 linker = "arm-linux-gnueabihf-gcc"
-
-[build]
-target = "arm-unknown-linux-gnueabihf"
+rustflags = [
+  "-C", "link-arg=-march=armv6",
+]
