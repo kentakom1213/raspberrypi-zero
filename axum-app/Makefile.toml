@@ -10,6 +10,6 @@ script = [
     "cp target/arm-unknown-linux-gnueabihf/release/axum-app ./"
 ]
 
-[tasks.deploy-zero]
+[tasks.deploy]
 description = "Build and copy axum-app for Raspberry Pi Zero"
 dependencies = ["build-zero", "copy-binary"]
