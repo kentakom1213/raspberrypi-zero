@@ -7,7 +7,7 @@ clear = true
 [tasks.copy-binary]
 description = "Copy the compiled binary to the project root"
 script = [
-    "cp target/arm-unknown-linux-gnueabihf/release/axum-app ./"
+    "cp target/arm-unknown-linux-gnueabihf/release/axum-app ."
 ]
 
 [tasks.deploy]
