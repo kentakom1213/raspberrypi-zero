@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>DHT22 Logs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 0 16px;
+        line-height: 1.7;
+        color: #222;
+        background: #fafafa;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border: 1px solid #ddd;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #eee;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: #f3f3f3;
+      }
+
+      .info {
+        color: #176b2c;
+      }
+
+      .error {
+        color: #9b1c1c;
+      }
+
+      a {
+        color: #0b63ce;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>DHT22 Logs</h1>
+    <p><a href="/">現在値に戻る</a> / <a href="/logs.json">JSON で見る</a></p>
+
+    {% if entries %}
+    <table>
+      <thead>
+        <tr>
+          <th>時刻</th>
+          <th>種類</th>
+          <th>内容</th>
+          <th>気温</th>
+          <th>湿度</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in entries %}
+        <tr>
+          <td>{{ log.time }}</td>
+          <td class="{{ log.level }}">{{ log.level }}</td>
+          <td>{{ log.message }}</td>
+          <td>
+            {% if log.temperature is defined %} {{
+            "%.1f"|format(log.temperature) }} ℃ {% endif %}
+          </td>
+          <td>
+            {% if log.humidity is defined %} {{ "%.1f"|format(log.humidity) }} %
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>まだログがありません．</p>
+    {% endif %}
+  </body>
+</html>

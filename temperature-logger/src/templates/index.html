@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>DHT22 Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 40px auto;
+        padding: 0 16px;
+        line-height: 1.7;
+        color: #222;
+        background: #fafafa;
+      }
+
+      .card {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+      }
+
+      .values {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin: 24px 0;
+      }
+
+      .value {
+        border: 1px solid #eee;
+        border-radius: 12px;
+        padding: 16px;
+        background: #fcfcfc;
+      }
+
+      .label {
+        font-size: 14px;
+        color: #666;
+      }
+
+      .number {
+        font-size: 40px;
+        font-weight: 700;
+        margin-top: 8px;
+      }
+
+      .meta {
+        color: #666;
+        font-size: 14px;
+      }
+
+      .error {
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #fff1f1;
+        color: #9b1c1c;
+      }
+
+      a {
+        color: #0b63ce;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>DHT22 Monitor</h1>
+
+      {% if data.temperature is not none and data.humidity is not none %}
+      <div class="values">
+        <div class="value">
+          <div class="label">気温</div>
+          <div class="number">{{ "%.1f"|format(data.temperature) }} ℃</div>
+        </div>
+        <div class="value">
+          <div class="label">湿度</div>
+          <div class="number">{{ "%.1f"|format(data.humidity) }} %</div>
+        </div>
+      </div>
+      <p class="meta">最終送信: {{ data.sent_at }}</p>
+      {% else %}
+      <p>まだデータを取得できていません．</p>
+      {% endif %} {% if data.last_error %}
+      <div class="error">last error: {{ data.last_error }}</div>
+      {% endif %}
+
+      <p>
+        <a href="/logs">ログを見る</a> /
+        <a href="/health">JSON を見る</a>
+      </p>
+    </div>
+  </body>
+</html>

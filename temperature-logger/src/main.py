@@ -2,23 +2,24 @@ import os
 import time
 import tomllib
 import threading
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from collections import deque
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 
 from sensor_dht22 import DHT22Reader
 
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
 JST = ZoneInfo("Asia/Tokyo")
 
-BASE_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")
 
-load_dotenv(BASE_DIR / ".env")
-
-with open(BASE_DIR / "config.toml", "rb") as f:
+with open(ROOT_DIR / "config.toml", "rb") as f:
     config = tomllib.load(f)
 
 
@@ -27,12 +28,14 @@ AMBIENT_WRITE_KEY = os.environ["AMBIENT_WRITE_KEY"]
 
 DHT_PIN = config["dht22"].get("pin", "D4")
 DHT_RETRIES = int(config["dht22"].get("retries", 3))
-DHT_RETRY_DELAY_SECONDS = float(config["dht22"].get("retry_delay_seconds", 2.0))
+DHT_RETRY_DELAY_SECONDS = float(config["dht22"].get("retry_delay_seconds", 3.0))
 
 SEND_INTERVAL_SECONDS = int(config["sender"].get("interval_seconds", 60))
 
 SERVER_HOST = config["server"].get("host", "0.0.0.0")
 SERVER_PORT = int(config["server"].get("port", 8000))
+
+MAX_LOGS = int(config.get("logs", {}).get("max_entries", 100))
 
 
 app = Flask(__name__)
@@ -49,6 +52,25 @@ latest_data = {
     "sent_at": None,
     "last_error": None,
 }
+
+logs = deque(maxlen=MAX_LOGS)
+lock = threading.Lock()
+
+
+def now_jst_string() -> str:
+    return datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def add_log(level: str, message: str, **data) -> None:
+    entry = {
+        "time": now_jst_string(),
+        "level": level,
+        "message": message,
+        **data,
+    }
+
+    with lock:
+        logs.appendleft(entry)
 
 
 def send_to_ambient(temperature: float, humidity: float) -> None:
@@ -73,12 +95,22 @@ def sender_loop() -> None:
 
             send_to_ambient(temperature, humidity)
 
-            latest_data = {
+            current = {
                 "temperature": temperature,
                 "humidity": humidity,
-                "sent_at": datetime.now(JST).isoformat(),
+                "sent_at": now_jst_string(),
                 "last_error": None,
             }
+
+            with lock:
+                latest_data = current
+
+            add_log(
+                "info",
+                "sent to Ambient",
+                temperature=temperature,
+                humidity=humidity,
+            )
 
             print(
                 f"sent: temperature={temperature}, humidity={humidity}",
@@ -86,20 +118,44 @@ def sender_loop() -> None:
             )
 
         except Exception as e:
-            latest_data["last_error"] = str(e)
-            print(f"error: {e}", flush=True)
+            error_message = str(e)
+
+            with lock:
+                latest_data["last_error"] = error_message
+
+            add_log("error", error_message)
+
+            print(f"error: {error_message}", flush=True)
 
         time.sleep(SEND_INTERVAL_SECONDS)
 
 
 @app.route("/")
 def index():
-    return "OK"
+    with lock:
+        data = dict(latest_data)
+
+    return render_template("index.html", data=data)
 
 
 @app.route("/health")
 def health():
-    return jsonify(latest_data)
+    with lock:
+        return jsonify(dict(latest_data))
+
+
+@app.route("/logs")
+def show_logs():
+    with lock:
+        entries = list(logs)
+
+    return render_template("logs.html", entries=entries)
+
+
+@app.route("/logs.json")
+def logs_json():
+    with lock:
+        return jsonify(list(logs))
 
 
 def start_background_sender() -> None:
@@ -108,6 +164,7 @@ def start_background_sender() -> None:
 
 
 if __name__ == "__main__":
+    add_log("info", "server started")
     start_background_sender()
 
     app.run(

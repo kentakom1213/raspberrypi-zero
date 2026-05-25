@@ -8,7 +8,7 @@ Type=simple
 User=powell
 Group=powell
 WorkingDirectory=/home/powell/raspberrypi-zero/temperature-logger
-ExecStart=/home/powell/raspberrypi-zero/temperature-logger/.venv/bin/python /home/powell/raspberrypi-zero/temperature-logger/main.py
+ExecStart=/home/powell/raspberrypi-zero/temperature-logger/.venv/bin/python /home/powell/raspberrypi-zero/temperature-logger/src/main.py
 Restart=always
 RestartSec=10
 
