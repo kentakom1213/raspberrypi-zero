@@ -1,0 +1,11 @@
+[dht22]
+pin = "D4"
+retries = 3
+retry_delay_seconds = 2.0
+
+[sender]
+interval_seconds = 60
+
+[server]
+host = "0.0.0.0"
+port = 8000
