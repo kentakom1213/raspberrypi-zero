@@ -10,7 +10,7 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify
 
-from sensor_dht22 import read_dht22
+from sensor_dht22 import DHT22Reader
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -36,6 +36,12 @@ SERVER_PORT = int(config["server"].get("port", 8000))
 
 
 app = Flask(__name__)
+
+sensor = DHT22Reader(
+    pin_name=DHT_PIN,
+    retries=DHT_RETRIES,
+    delay_seconds=DHT_RETRY_DELAY_SECONDS,
+)
 
 latest_data = {
     "temperature": None,
@@ -63,11 +69,7 @@ def sender_loop() -> None:
 
     while True:
         try:
-            temperature, humidity = read_dht22(
-                pin_name=DHT_PIN,
-                retries=DHT_RETRIES,
-                delay_seconds=DHT_RETRY_DELAY_SECONDS,
-            )
+            temperature, humidity = sensor.read()
 
             send_to_ambient(temperature, humidity)
 

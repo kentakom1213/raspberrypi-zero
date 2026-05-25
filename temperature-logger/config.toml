@@ -1,7 +1,7 @@
 [dht22]
 pin = "D4"
 retries = 3
-retry_delay_seconds = 2.0
+retry_delay_seconds = 3.0
 
 [sender]
 interval_seconds = 60
