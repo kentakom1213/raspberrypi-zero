@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 User=zero
-WorkingDirectory=/home/zero/develop/raspberrypi-zero/flask-app
-ExecStart=/home/zero/develop/raspberrypi-zero/flask-app/.venv/bin/python app.py
+WorkingDirectory=/home/powell/raspberrypi-zero/flask-app
+ExecStart=/home/powell/raspberrypi-zero/flask-app/.venv/bin/python app.py
 Restart=always
 
 [Install]

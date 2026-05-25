@@ -1,0 +1,7 @@
+tunnel: <cloudflare-tunnel-id>
+credentials-file: /home/powell/.cloudflared/<cloudflare-tunnel-id>.json
+
+ingress:
+  - hostname: pi.pwll.dev
+    service: http://127.0.0.1:8000
+  - service: http_status:404

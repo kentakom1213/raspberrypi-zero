@@ -1,0 +1,16 @@
+[Unit]
+Description=DHT22 Ambient Sender
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=powell
+Group=powell
+WorkingDirectory=/home/powell/raspberrypi-zero/temperature-logger
+ExecStart=/home/powell/raspberrypi-zero/temperature-logger/.venv/bin/python /home/powell/raspberrypi-zero/temperature-logger/main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
