@@ -1,34 +1,13 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
-    <head>
-        <meta charset="utf-8" />
-        <title>DHT22 Monitor</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        {% if data.temperature is none %}
-            {% set temp_level = "unknown" %}
-            {% set
-            temp_label = "不明" %}
-        {% elif data.temperature < 15 %}
-            {% set temp_level = "cold" %} {% set temp_label = "寒め" %}
-            {% elif data.temperature < 25 %}
-                {%
-                    set temp_level = "comfortable" %} {% set temp_label = "快適" %}
-                {% elif
-                data.temperature < 30 %}
-                {% set temp_level = "warm" %} {% set temp_label = "暖かめ" %}
-            {% else %}
-                {% set temp_level = "hot" %} {% set temp_label = "暑め" %}
-            {% endif %}
-            {% if data.humidity is none %}
-                {% set humidity_level = "unknown" %}
-            {% elif data.humidity < 40 %}
-                {% set humidity_level = "dry" %}
-            {% elif data.humidity <= 70 %}
-                {% set humidity_level = "comfortable" %} {%
-                else %} {% set humidity_level = "humid" %}
-            {% endif %}
-            <style>
+  <head>
+    <meta charset="utf-8" />
+    <title>DHT22 Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
       :root {
         --accent: #666;
         --accent-bg: #f5f5f5;
@@ -160,15 +139,12 @@
       }
 
       .error {
+        display: none;
         margin-top: 16px;
         padding: 12px;
         border-radius: 8px;
         background: #fff1f1;
         color: #9b1c1c;
-      }
-
-      a {
-        color: #0b63ce;
       }
 
       @media (max-width: 560px) {
@@ -184,59 +160,155 @@
           height: 280px;
         }
       }
-            </style>
-        </head>
-        <body>
-            <div class="card {{ temp_level }}">
-                <h1>DHT22 Monitor</h1>
-                {% if data.temperature is not none and data.humidity is not none %}
-                    <span class="status">{{ temp_label }}</span>
-                    <div class="values">
-                        <div class="value temperature">
-                            <div class="label">気温</div>
-                            <div class="number">{{ "%.1f"|format(data.temperature) }} ℃</div>
-                        </div>
-                        <div class="value humidity {{ humidity_level }}">
-                            <div class="label">湿度</div>
-                            <div class="number">{{ "%.1f"|format(data.humidity) }} %</div>
-                        </div>
-                    </div>
-                    <p class="meta">最終送信: {{ data.sent_at }}</p>
-                    <div class="chart-section">
-                        <h2>最近の推移</h2>
-                        <div class="chart-area">
-                            <canvas id="sensorChart"></canvas>
-                        </div>
-                    </div>
-                {% else %}
-                    <p>まだデータを取得できていません．</p>
-                {% endif %}
-                {% if data.last_error %}<div class="error">last error: {{ data.last_error }}</div>{% endif %}
-                <p>
-                    <a href="/logs">ログを見る</a> /
-                    <a href="/health">JSON を見る</a> /
-                    <a href="/api/readings">グラフ用 JSON を見る</a>
-                </p>
-            </div>
-            <script>
+    </style>
+  </head>
+
+  <body>
+    <div class="card unknown" id="mainCard">
+      <h1>DHT22 Monitor</h1>
+
+      <span class="status" id="statusLabel">不明</span>
+
+      <div class="values">
+        <div class="value temperature">
+          <div class="label">気温</div>
+          <div class="number" id="temperatureValue">-- ℃</div>
+        </div>
+
+        <div class="value humidity" id="humidityCard">
+          <div class="label">湿度</div>
+          <div class="number" id="humidityValue">-- %</div>
+        </div>
+      </div>
+
+      <p class="meta">最終送信: <span id="sentAtValue">未送信</span></p>
+
+      <div class="chart-section">
+        <h2>最近の推移</h2>
+        <div class="chart-area">
+          <canvas id="sensorChart"></canvas>
+        </div>
+      </div>
+
+      <div class="error" id="errorBox">
+        last error: <span id="errorValue"></span>
+      </div>
+    </div>
+
+    <script>
       let sensorChart = null;
 
-      async function fetchReadings() {
-        const response = await fetch("/api/readings");
+      async function fetchJson(path) {
+        const response = await fetch(path);
 
         if (!response.ok) {
-          throw new Error("failed to fetch readings");
+          throw new Error(`failed to fetch ${path}`);
         }
 
         return await response.json();
       }
 
+      function getTemperatureLevel(temperature) {
+        if (temperature === null || temperature === undefined) {
+          return {
+            level: "unknown",
+            label: "不明",
+          };
+        }
+
+        if (temperature < 15) {
+          return {
+            level: "cold",
+            label: "寒め",
+          };
+        }
+
+        if (temperature < 25) {
+          return {
+            level: "comfortable",
+            label: "快適",
+          };
+        }
+
+        if (temperature < 30) {
+          return {
+            level: "warm",
+            label: "暖かめ",
+          };
+        }
+
+        return {
+          level: "hot",
+          label: "暑め",
+        };
+      }
+
+      function getHumidityLevel(humidity) {
+        if (humidity === null || humidity === undefined) {
+          return "unknown";
+        }
+
+        if (humidity < 40) {
+          return "dry";
+        }
+
+        if (humidity <= 70) {
+          return "comfortable";
+        }
+
+        return "humid";
+      }
+
+      function formatTemperature(value) {
+        if (value === null || value === undefined) {
+          return "-- ℃";
+        }
+
+        return `${Number(value).toFixed(1)} ℃`;
+      }
+
+      function formatHumidity(value) {
+        if (value === null || value === undefined) {
+          return "-- %";
+        }
+
+        return `${Number(value).toFixed(1)} %`;
+      }
+
+      function updateCurrentValues(data) {
+        const mainCard = document.getElementById("mainCard");
+        const statusLabel = document.getElementById("statusLabel");
+        const temperatureValue = document.getElementById("temperatureValue");
+        const humidityValue = document.getElementById("humidityValue");
+        const humidityCard = document.getElementById("humidityCard");
+        const sentAtValue = document.getElementById("sentAtValue");
+        const errorBox = document.getElementById("errorBox");
+        const errorValue = document.getElementById("errorValue");
+
+        const temperatureLevel = getTemperatureLevel(data.temperature);
+        const humidityLevel = getHumidityLevel(data.humidity);
+
+        mainCard.className = `card ${temperatureLevel.level}`;
+        statusLabel.textContent = temperatureLevel.label;
+
+        temperatureValue.textContent = formatTemperature(data.temperature);
+        humidityValue.textContent = formatHumidity(data.humidity);
+
+        humidityCard.className = `value humidity ${humidityLevel}`;
+
+        sentAtValue.textContent = data.sent_at ?? "未送信";
+
+        if (data.last_error) {
+          errorValue.textContent = data.last_error;
+          errorBox.style.display = "block";
+        } else {
+          errorValue.textContent = "";
+          errorBox.style.display = "none";
+        }
+      }
+
       function createChart(readings) {
         const canvas = document.getElementById("sensorChart");
-
-        if (canvas === null) {
-          return;
-        }
 
         const labels = readings.map((row) => row.time);
         const temperatures = readings.map((row) => row.temperature);
@@ -321,24 +393,27 @@
         sensorChart.data.datasets[0].data = readings.map(
           (row) => row.temperature,
         );
-        sensorChart.data.datasets[1].data = readings.map(
-          (row) => row.humidity,
-        );
+        sensorChart.data.datasets[1].data = readings.map((row) => row.humidity);
 
         sensorChart.update();
       }
 
-      async function refreshChart() {
+      async function refreshPageData() {
         try {
-          const readings = await fetchReadings();
+          const [current, readings] = await Promise.all([
+            fetchJson("/health"),
+            fetchJson("/api/readings"),
+          ]);
+
+          updateCurrentValues(current);
           updateChart(readings);
         } catch (error) {
           console.error(error);
         }
       }
 
-      refreshChart();
-      setInterval(refreshChart, 60 * 1000);
-            </script>
-        </body>
-    </html>
+      refreshPageData();
+      setInterval(refreshPageData, 60 * 1000);
+    </script>
+  </body>
+</html>

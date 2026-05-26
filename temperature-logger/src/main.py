@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, request, send_from_directory
 
 from sensor_dht22 import DHT22Reader
 
@@ -35,11 +35,10 @@ SEND_INTERVAL_SECONDS = int(config["sender"].get("interval_seconds", 60))
 SERVER_HOST = config["server"].get("host", "0.0.0.0")
 SERVER_PORT = int(config["server"].get("port", 8000))
 
-MAX_LOGS = int(config.get("logs", {}).get("max_entries", 100))
 MAX_READINGS = int(config.get("chart", {}).get("max_points", 300))
 
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 sensor = DHT22Reader(
     pin_name=DHT_PIN,
@@ -54,25 +53,12 @@ latest_data = {
     "last_error": None,
 }
 
-logs = deque(maxlen=MAX_LOGS)
 readings = deque(maxlen=MAX_READINGS)
 lock = threading.Lock()
 
 
 def now_jst_string() -> str:
     return datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def add_log(level: str, message: str, **data) -> None:
-    entry = {
-        "time": now_jst_string(),
-        "level": level,
-        "message": message,
-        **data,
-    }
-
-    with lock:
-        logs.appendleft(entry)
 
 
 def send_to_ambient(temperature: float, humidity: float) -> None:
@@ -114,13 +100,6 @@ def sender_loop() -> None:
                     }
                 )
 
-            add_log(
-                "info",
-                "sent to Ambient",
-                temperature=temperature,
-                humidity=humidity,
-            )
-
             print(
                 f"sent: temperature={temperature}, humidity={humidity}",
                 flush=True,
@@ -132,39 +111,34 @@ def sender_loop() -> None:
             with lock:
                 latest_data["last_error"] = error_message
 
-            add_log("error", error_message)
-
             print(f"error: {error_message}", flush=True)
 
         time.sleep(SEND_INTERVAL_SECONDS)
 
 
+@app.after_request
+def add_cache_headers(response):
+    path = request.path
+
+    if path in {"/", "/health", "/api/readings"} or path.startswith("/static/"):
+        response.headers["Cache-Control"] = (
+            "public, max-age=60, s-maxage=60, stale-while-revalidate=60"
+        )
+        return response
+
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/")
 def index():
-    with lock:
-        data = dict(latest_data)
-
-    return render_template("index.html", data=data)
+    return send_from_directory(app.static_folder, "index.html")
 
 
 @app.route("/health")
 def health():
     with lock:
         return jsonify(dict(latest_data))
-
-
-@app.route("/logs")
-def show_logs():
-    with lock:
-        entries = list(logs)
-
-    return render_template("logs.html", entries=entries)
-
-
-@app.route("/logs.json")
-def logs_json():
-    with lock:
-        return jsonify(list(logs))
 
 
 @app.route("/api/readings")
@@ -179,7 +153,6 @@ def start_background_sender() -> None:
 
 
 if __name__ == "__main__":
-    add_log("info", "server started")
     start_background_sender()
 
     app.run(
