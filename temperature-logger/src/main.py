@@ -36,6 +36,7 @@ SERVER_HOST = config["server"].get("host", "0.0.0.0")
 SERVER_PORT = int(config["server"].get("port", 8000))
 
 MAX_LOGS = int(config.get("logs", {}).get("max_entries", 100))
+MAX_READINGS = int(config.get("chart", {}).get("max_points", 300))
 
 
 app = Flask(__name__)
@@ -54,6 +55,7 @@ latest_data = {
 }
 
 logs = deque(maxlen=MAX_LOGS)
+readings = deque(maxlen=MAX_READINGS)
 lock = threading.Lock()
 
 
@@ -104,6 +106,13 @@ def sender_loop() -> None:
 
             with lock:
                 latest_data = current
+                readings.append(
+                    {
+                        "time": current["sent_at"],
+                        "temperature": temperature,
+                        "humidity": humidity,
+                    }
+                )
 
             add_log(
                 "info",
@@ -156,6 +165,12 @@ def show_logs():
 def logs_json():
     with lock:
         return jsonify(list(logs))
+
+
+@app.route("/api/readings")
+def readings_json():
+    with lock:
+        return jsonify(list(readings))
 
 
 def start_background_sender() -> None:

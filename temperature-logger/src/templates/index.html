@@ -1,22 +1,34 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <title>DHT22 Monitor</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    {% if data.temperature is none %} {% set temp_level = "unknown" %} {% set
-    temp_label = "不明" %} {% elif data.temperature < 15 %} {% set temp_level =
-    "cold" %} {% set temp_label = "寒め" %} {% elif data.temperature < 25 %} {%
-    set temp_level = "comfortable" %} {% set temp_label = "快適" %} {% elif
-    data.temperature < 30 %} {% set temp_level = "warm" %} {% set temp_label =
-    "暖かめ" %} {% else %} {% set temp_level = "hot" %} {% set temp_label =
-    "暑め" %} {% endif %} {% if data.humidity is none %} {% set humidity_level =
-    "unknown" %} {% elif data.humidity < 40 %} {% set humidity_level = "dry" %}
-    {% elif data.humidity <= 70 %} {% set humidity_level = "comfortable" %} {%
-    else %} {% set humidity_level = "humid" %} {% endif %}
-
-    <style>
+    <head>
+        <meta charset="utf-8" />
+        <title>DHT22 Monitor</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        {% if data.temperature is none %}
+            {% set temp_level = "unknown" %}
+            {% set
+            temp_label = "不明" %}
+        {% elif data.temperature < 15 %}
+            {% set temp_level = "cold" %} {% set temp_label = "寒め" %}
+            {% elif data.temperature < 25 %}
+                {%
+                    set temp_level = "comfortable" %} {% set temp_label = "快適" %}
+                {% elif
+                data.temperature < 30 %}
+                {% set temp_level = "warm" %} {% set temp_label = "暖かめ" %}
+            {% else %}
+                {% set temp_level = "hot" %} {% set temp_label = "暑め" %}
+            {% endif %}
+            {% if data.humidity is none %}
+                {% set humidity_level = "unknown" %}
+            {% elif data.humidity < 40 %}
+                {% set humidity_level = "dry" %}
+            {% elif data.humidity <= 70 %}
+                {% set humidity_level = "comfortable" %} {%
+                else %} {% set humidity_level = "humid" %}
+            {% endif %}
+            <style>
       :root {
         --accent: #666;
         --accent-bg: #f5f5f5;
@@ -130,6 +142,23 @@
         background: var(--accent);
       }
 
+      .chart-section {
+        margin-top: 24px;
+      }
+
+      .chart-section h2 {
+        margin-bottom: 12px;
+        font-size: 20px;
+      }
+
+      .chart-area {
+        height: 320px;
+        border: 1px solid #eee;
+        border-radius: 12px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+
       .error {
         margin-top: 16px;
         padding: 12px;
@@ -150,39 +179,166 @@
         .number {
           font-size: 36px;
         }
+
+        .chart-area {
+          height: 280px;
+        }
       }
-    </style>
-  </head>
-  <body>
-    <div class="card {{ temp_level }}">
-      <h1>DHT22 Monitor</h1>
+            </style>
+        </head>
+        <body>
+            <div class="card {{ temp_level }}">
+                <h1>DHT22 Monitor</h1>
+                {% if data.temperature is not none and data.humidity is not none %}
+                    <span class="status">{{ temp_label }}</span>
+                    <div class="values">
+                        <div class="value temperature">
+                            <div class="label">気温</div>
+                            <div class="number">{{ "%.1f"|format(data.temperature) }} ℃</div>
+                        </div>
+                        <div class="value humidity {{ humidity_level }}">
+                            <div class="label">湿度</div>
+                            <div class="number">{{ "%.1f"|format(data.humidity) }} %</div>
+                        </div>
+                    </div>
+                    <p class="meta">最終送信: {{ data.sent_at }}</p>
+                    <div class="chart-section">
+                        <h2>最近の推移</h2>
+                        <div class="chart-area">
+                            <canvas id="sensorChart"></canvas>
+                        </div>
+                    </div>
+                {% else %}
+                    <p>まだデータを取得できていません．</p>
+                {% endif %}
+                {% if data.last_error %}<div class="error">last error: {{ data.last_error }}</div>{% endif %}
+                <p>
+                    <a href="/logs">ログを見る</a> /
+                    <a href="/health">JSON を見る</a> /
+                    <a href="/api/readings">グラフ用 JSON を見る</a>
+                </p>
+            </div>
+            <script>
+      let sensorChart = null;
 
-      {% if data.temperature is not none and data.humidity is not none %}
-      <span class="status">{{ temp_label }}</span>
+      async function fetchReadings() {
+        const response = await fetch("/api/readings");
 
-      <div class="values">
-        <div class="value temperature">
-          <div class="label">気温</div>
-          <div class="number">{{ "%.1f"|format(data.temperature) }} ℃</div>
-        </div>
+        if (!response.ok) {
+          throw new Error("failed to fetch readings");
+        }
 
-        <div class="value humidity {{ humidity_level }}">
-          <div class="label">湿度</div>
-          <div class="number">{{ "%.1f"|format(data.humidity) }} %</div>
-        </div>
-      </div>
+        return await response.json();
+      }
 
-      <p class="meta">最終送信: {{ data.sent_at }}</p>
-      {% else %}
-      <p>まだデータを取得できていません．</p>
-      {% endif %} {% if data.last_error %}
-      <div class="error">last error: {{ data.last_error }}</div>
-      {% endif %}
+      function createChart(readings) {
+        const canvas = document.getElementById("sensorChart");
 
-      <p>
-        <a href="/logs">ログを見る</a> /
-        <a href="/health">JSON を見る</a>
-      </p>
-    </div>
-  </body>
-</html>
+        if (canvas === null) {
+          return;
+        }
+
+        const labels = readings.map((row) => row.time);
+        const temperatures = readings.map((row) => row.temperature);
+        const humidities = readings.map((row) => row.humidity);
+
+        sensorChart = new Chart(canvas, {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "気温 (℃)",
+                data: temperatures,
+                yAxisID: "yTemperature",
+                tension: 0.3,
+                pointRadius: 0,
+                borderWidth: 2,
+              },
+              {
+                label: "湿度 (%)",
+                data: humidities,
+                yAxisID: "yHumidity",
+                tension: 0.3,
+                pointRadius: 0,
+                borderWidth: 2,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: {
+              mode: "index",
+              intersect: false,
+            },
+            plugins: {
+              legend: {
+                position: "top",
+              },
+              tooltip: {
+                enabled: true,
+              },
+            },
+            scales: {
+              x: {
+                ticks: {
+                  maxTicksLimit: 6,
+                },
+              },
+              yTemperature: {
+                type: "linear",
+                position: "left",
+                title: {
+                  display: true,
+                  text: "気温 (℃)",
+                },
+              },
+              yHumidity: {
+                type: "linear",
+                position: "right",
+                title: {
+                  display: true,
+                  text: "湿度 (%)",
+                },
+                grid: {
+                  drawOnChartArea: false,
+                },
+              },
+            },
+          },
+        });
+      }
+
+      function updateChart(readings) {
+        if (sensorChart === null) {
+          createChart(readings);
+          return;
+        }
+
+        sensorChart.data.labels = readings.map((row) => row.time);
+        sensorChart.data.datasets[0].data = readings.map(
+          (row) => row.temperature,
+        );
+        sensorChart.data.datasets[1].data = readings.map(
+          (row) => row.humidity,
+        );
+
+        sensorChart.update();
+      }
+
+      async function refreshChart() {
+        try {
+          const readings = await fetchReadings();
+          updateChart(readings);
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
+      refreshChart();
+      setInterval(refreshChart, 60 * 1000);
+            </script>
+        </body>
+    </html>

@@ -9,3 +9,6 @@ interval_seconds = 60
 [server]
 host = "0.0.0.0"
 port = 8000
+
+[chart]
+max_points = 300
