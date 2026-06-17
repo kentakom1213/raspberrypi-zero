@@ -4,8 +4,8 @@ credentials-file: /home/powell/.cloudflared/<cloudflare-tunnel-id>.json
 ingress:
   - hostname: pi.pwll.dev
     service: http://localhost:8000
-  - hostname: boot.pi.pwll.dev
+  - hostname: pi-boot.pwll.dev
     service: http://localhost:9000
-  - hostname: ssh.pi.pwll.dev
+  - hostname: pi-ssh.pwll.dev
     service: ssh://localhost:22
   - service: http_status:404
