@@ -1,18 +1,16 @@
 import os
-import time
-import tomllib
 import threading
+import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
+import tomllib
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
-
 from sensor_dht22 import DHT22Reader
-
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 JST = ZoneInfo("Asia/Tokyo")
@@ -70,7 +68,7 @@ def send_to_ambient(temperature: float, humidity: float) -> None:
         "d2": humidity,
     }
 
-    response = requests.post(url, json=payload, timeout=10)
+    response = requests.post(url, json=payload, timeout=(3, 5))
     response.raise_for_status()
 
 
@@ -80,8 +78,6 @@ def sender_loop() -> None:
     while True:
         try:
             temperature, humidity = sensor.read()
-
-            send_to_ambient(temperature, humidity)
 
             current = {
                 "temperature": temperature,
@@ -101,12 +97,28 @@ def sender_loop() -> None:
                 )
 
             print(
-                f"sent: temperature={temperature}, humidity={humidity}",
+                f"read: temperature={temperature}, humidity={humidity}",
                 flush=True,
             )
 
+            try:
+                send_to_ambient(temperature, humidity)
+
+                print(
+                    f"sent to Ambient: temperature={temperature}, humidity={humidity}",
+                    flush=True,
+                )
+
+            except Exception as e:
+                error_message = f"Ambient send failed: {e}"
+
+                with lock:
+                    latest_data["last_error"] = error_message
+
+                print(f"error: {error_message}", flush=True)
+
         except Exception as e:
-            error_message = str(e)
+            error_message = f"DHT22 read failed: {e}"
 
             with lock:
                 latest_data["last_error"] = error_message
