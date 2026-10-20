@@ -242,6 +242,7 @@ def stats_json():
             start_ms,
             end_ms,
             use_daily=group_by != "hour" and interval != "hour",
+            use_hourly=group_by == "hour" or interval == "hour",
         ),
     }
     if interval:

@@ -11,10 +11,24 @@ from zoneinfo import ZoneInfo
 JST = ZoneInfo("Asia/Tokyo")
 JST_OFFSET_MS = 9 * 60 * 60 * 1000
 DAY_MS = 24 * 60 * 60 * 1000
+HOUR_MS = 60 * 60 * 1000
 DAILY_STATS_VERSION = 1
+HOURLY_STATS_VERSION = 2
 DAILY_STATS_SCHEMA = """
     CREATE TABLE IF NOT EXISTS daily_stats (
         day TEXT PRIMARY KEY,
+        samples INTEGER NOT NULL,
+        temperature_sum REAL NOT NULL,
+        temperature_min REAL NOT NULL,
+        temperature_max REAL NOT NULL,
+        humidity_sum REAL NOT NULL,
+        humidity_min REAL NOT NULL,
+        humidity_max REAL NOT NULL
+    )
+"""
+HOURLY_STATS_SCHEMA = """
+    CREATE TABLE IF NOT EXISTS hourly_stats (
+        hour_start_ms INTEGER PRIMARY KEY,
         samples INTEGER NOT NULL,
         temperature_sum REAL NOT NULL,
         temperature_min REAL NOT NULL,
@@ -47,6 +61,9 @@ def initialize(db_path):
         daily_existed = db.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'daily_stats'"
         ).fetchone()
+        hourly_existed = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'hourly_stats'"
+        ).fetchone()
         db.execute("""
             CREATE TABLE IF NOT EXISTS readings (
                 id INTEGER PRIMARY KEY,
@@ -64,12 +81,20 @@ def initialize(db_path):
             "CREATE INDEX IF NOT EXISTS readings_pending ON readings(id) WHERE ambient_sent_at_ms IS NULL"
         )
         db.execute(DAILY_STATS_SCHEMA)
+        db.execute(HOURLY_STATS_SCHEMA)
         if not daily_existed:
             # A legacy DB stays on the exact raw-data path until an explicit rebuild.
             has_readings = db.execute("SELECT 1 FROM readings LIMIT 1").fetchone()
             db.execute(
-                f"PRAGMA user_version = {0 if has_readings else DAILY_STATS_VERSION}"
+                f"PRAGMA user_version = {0 if has_readings else HOURLY_STATS_VERSION}"
             )
+        elif not hourly_existed:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            has_readings = db.execute("SELECT 1 FROM readings LIMIT 1").fetchone()
+            if not has_readings and version >= DAILY_STATS_VERSION:
+                db.execute(f"PRAGMA user_version = {HOURLY_STATS_VERSION}")
+            elif version >= HOURLY_STATS_VERSION:
+                db.execute(f"PRAGMA user_version = {DAILY_STATS_VERSION}")
 
 
 def validate_values(temperature, humidity):
@@ -86,6 +111,31 @@ def insert(db_path, measured_at_ms, temperature, humidity, sent=False):
             "INSERT INTO readings (measured_at_ms, temperature, humidity, ambient_sent_at_ms) "
             "VALUES (?, ?, ?, ?)",
             (measured_at_ms, temperature, humidity, measured_at_ms if sent else None),
+        )
+        hour_start_ms = (
+            measured_at_ms + JST_OFFSET_MS
+        ) // HOUR_MS * HOUR_MS - JST_OFFSET_MS
+        db.execute(
+            "INSERT INTO hourly_stats (hour_start_ms, samples, temperature_sum, "
+            "temperature_min, temperature_max, humidity_sum, humidity_min, "
+            "humidity_max) VALUES (?, 1, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(hour_start_ms) DO UPDATE SET "
+            "samples = hourly_stats.samples + 1, "
+            "temperature_sum = hourly_stats.temperature_sum + excluded.temperature_sum, "
+            "temperature_min = MIN(hourly_stats.temperature_min, excluded.temperature_min), "
+            "temperature_max = MAX(hourly_stats.temperature_max, excluded.temperature_max), "
+            "humidity_sum = hourly_stats.humidity_sum + excluded.humidity_sum, "
+            "humidity_min = MIN(hourly_stats.humidity_min, excluded.humidity_min), "
+            "humidity_max = MAX(hourly_stats.humidity_max, excluded.humidity_max)",
+            (
+                hour_start_ms,
+                temperature,
+                temperature,
+                temperature,
+                humidity,
+                humidity,
+                humidity,
+            ),
         )
         day = datetime.fromtimestamp(measured_at_ms / 1000, JST).date().isoformat()
         db.execute(
@@ -145,7 +195,7 @@ def range_readings(db_path, start_ms, end_ms, limit):
 
 
 def _daily_range(db, start_ms, end_ms):
-    if db.execute("PRAGMA user_version").fetchone()[0] != DAILY_STATS_VERSION:
+    if db.execute("PRAGMA user_version").fetchone()[0] < DAILY_STATS_VERSION:
         return None
     if start_ms == 0 and end_ms == 2**63 - 1:
         first = db.execute(
@@ -173,8 +223,100 @@ def _day_filter(days):
     return " WHERE day >= ? AND day < ?", days
 
 
-def summary(db_path, start_ms, end_ms, use_daily=True):
+def _combined_query(db, start_ms, end_ms, source, interval=None):
+    """Use complete stored hours/days and scan only the two partial edges."""
+    width = HOUR_MS if source == "hour" else DAY_MS
+    first_full = (start_ms + JST_OFFSET_MS + width - 1) // width * width - JST_OFFSET_MS
+    last_full = (end_ms + JST_OFFSET_MS) // width * width - JST_OFFSET_MS
+    if first_full < last_full:
+        if source == "hour":
+            stored = (
+                "SELECT hour_start_ms AS point_ms, samples, temperature_sum, "
+                "temperature_min, temperature_max, humidity_sum, humidity_min, "
+                "humidity_max FROM hourly_stats "
+                "WHERE hour_start_ms >= ? AND hour_start_ms < ?"
+            )
+            stored_params = (first_full, last_full)
+        else:
+            stored = (
+                "SELECT CAST(strftime('%s', day) AS INTEGER) * 1000 - "
+                f"{JST_OFFSET_MS} AS point_ms, samples, temperature_sum, "
+                "temperature_min, temperature_max, humidity_sum, humidity_min, "
+                "humidity_max FROM daily_stats WHERE day >= ?"
+            )
+            stored_params = (
+                datetime.fromtimestamp(first_full / 1000, JST).date().isoformat(),
+            )
+            if end_ms != 2**63 - 1:
+                stored += " AND day < ?"
+                stored_params += (
+                    datetime.fromtimestamp(last_full / 1000, JST).date().isoformat(),
+                )
+    else:
+        stored = (
+            "SELECT measured_at_ms AS point_ms, 1 AS samples, "
+            "temperature AS temperature_sum, temperature AS temperature_min, "
+            "temperature AS temperature_max, humidity AS humidity_sum, "
+            "humidity AS humidity_min, humidity AS humidity_max "
+            "FROM readings WHERE 0"
+        )
+        stored_params = ()
+    raw = (
+        "SELECT measured_at_ms AS point_ms, 1 AS samples, "
+        "temperature AS temperature_sum, temperature AS temperature_min, "
+        "temperature AS temperature_max, humidity AS humidity_sum, "
+        "humidity AS humidity_min, humidity AS humidity_max "
+        "FROM readings WHERE measured_at_ms >= ? AND measured_at_ms < ?"
+    )
+    leading_end = min(end_ms, first_full)
+    trailing_start = max(start_ms, first_full, last_full)
+    params = (
+        *stored_params,
+        start_ms,
+        leading_end,
+        trailing_start,
+        end_ms,
+    )
+    fields = (
+        "COALESCE(SUM(samples), 0) AS count, "
+        "SUM(temperature_sum) / SUM(samples) AS temperature_avg, "
+        "MIN(temperature_min) AS temperature_min, "
+        "MAX(temperature_max) AS temperature_max, "
+        "SUM(humidity_sum) / SUM(samples) AS humidity_avg, "
+        "MIN(humidity_min) AS humidity_min, "
+        "MAX(humidity_max) AS humidity_max"
+    )
+    if interval is None:
+        select = f"SELECT {fields} FROM parts"
+    else:
+        if interval in ("hour", "day"):
+            bucket_width = HOUR_MS if interval == "hour" else DAY_MS
+            bucket = (
+                f"((point_ms + {JST_OFFSET_MS}) / {bucket_width}) "
+                f"* {bucket_width} - {JST_OFFSET_MS}"
+            )
+        else:
+            modifier = (
+                "'weekday 0', '-6 days'" if interval == "week" else "'start of month'"
+            )
+            bucket = (
+                "CAST(strftime('%s', date(point_ms / 1000, 'unixepoch', "
+                f"'+9 hours', {modifier})) AS INTEGER) * 1000 - {JST_OFFSET_MS}"
+            )
+        select = (
+            f"SELECT {bucket} AS bucket_start_ms, {fields} FROM parts "
+            "GROUP BY bucket_start_ms ORDER BY bucket_start_ms"
+        )
+    query = f"WITH parts AS ({stored} UNION ALL {raw} UNION ALL {raw}) {select}"
+    rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows] if interval else dict(rows[0])
+
+
+def summary(db_path, start_ms, end_ms, use_daily=True, use_hourly=False):
     with connect(db_path) as db:
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        if use_hourly and version >= HOURLY_STATS_VERSION:
+            return _combined_query(db, start_ms, end_ms, "hour")
         days = _daily_range(db, start_ms, end_ms) if use_daily else None
         if days is not None:
             where, params = _day_filter(days)
@@ -188,6 +330,8 @@ def summary(db_path, start_ms, end_ms, use_daily=True):
                 "MAX(humidity_max) AS humidity_max FROM daily_stats" + where,
                 params,
             ).fetchone()
+        elif use_daily and version >= DAILY_STATS_VERSION:
+            return _combined_query(db, start_ms, end_ms, "day")
         else:
             row = db.execute(
                 "SELECT COUNT(*) AS count, AVG(temperature) AS temperature_avg, "
@@ -202,6 +346,9 @@ def summary(db_path, start_ms, end_ms, use_daily=True):
 
 def grouped(db_path, start_ms, end_ms, interval):
     with connect(db_path) as db:
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        if interval == "hour" and version >= HOURLY_STATS_VERSION:
+            return _combined_query(db, start_ms, end_ms, "hour", interval)
         days = _daily_range(db, start_ms, end_ms) if interval != "hour" else None
         if days is not None:
             modifier = {
@@ -226,6 +373,8 @@ def grouped(db_path, start_ms, end_ms, interval):
                 params,
             ).fetchall()
             return [dict(row) for row in rows]
+        if interval != "hour" and version >= DAILY_STATS_VERSION:
+            return _combined_query(db, start_ms, end_ms, "day", interval)
 
         if interval in ("hour", "day"):
             bucket_ms = {"hour": 3600000, "day": 86400000}[interval]
@@ -270,8 +419,126 @@ def rebuild_daily_stats(db_path):
             "SUM(humidity), MIN(humidity), MAX(humidity) "
             "FROM readings GROUP BY day"
         )
-        db.execute(f"PRAGMA user_version = {DAILY_STATS_VERSION}")
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        db.execute(f"PRAGMA user_version = {max(version, DAILY_STATS_VERSION)}")
         return db.execute("SELECT COUNT(*) FROM daily_stats").fetchone()[0]
+
+
+def rebuild_hourly_stats(db_path):
+    """Atomically rebuild hourly totals from readings without replacing the DB."""
+    with connect(db_path) as db:
+        db.execute("BEGIN IMMEDIATE")
+        if db.execute("PRAGMA user_version").fetchone()[0] < DAILY_STATS_VERSION:
+            raise RuntimeError("rebuild daily_stats before hourly_stats")
+        db.execute(HOURLY_STATS_SCHEMA)
+        db.execute("DELETE FROM hourly_stats")
+        db.execute(
+            "INSERT INTO hourly_stats (hour_start_ms, samples, temperature_sum, "
+            "temperature_min, temperature_max, humidity_sum, humidity_min, "
+            "humidity_max) "
+            f"SELECT ((measured_at_ms + {JST_OFFSET_MS}) / {HOUR_MS}) * "
+            f"{HOUR_MS} - {JST_OFFSET_MS} AS hour_start_ms, "
+            "COUNT(*), SUM(temperature), MIN(temperature), MAX(temperature), "
+            "SUM(humidity), MIN(humidity), MAX(humidity) "
+            "FROM readings GROUP BY hour_start_ms"
+        )
+        db.execute(f"PRAGMA user_version = {HOURLY_STATS_VERSION}")
+        return db.execute("SELECT COUNT(*) FROM hourly_stats").fetchone()[0]
+
+
+def validate_hourly_stats(db_path):
+    """Compare every stored hour against the authoritative readings."""
+    fields = (
+        "samples",
+        "temperature_sum",
+        "temperature_min",
+        "temperature_max",
+        "humidity_sum",
+        "humidity_min",
+        "humidity_max",
+    )
+    mismatches = []
+    mismatch_count = 0
+    with connect(db_path) as db:
+        ready = db.execute("PRAGMA user_version").fetchone()[0] >= HOURLY_STATS_VERSION
+        integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
+        exists = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'hourly_stats'"
+        ).fetchone()
+        if not exists:
+            return {
+                "ok": False,
+                "ready": False,
+                "integrity_check": integrity,
+                "hours_compared": 0,
+                "mismatch_count": 1,
+                "mismatches": [{"scope": "schema", "field": "hourly_stats"}],
+            }
+        expected_rows = db.execute(
+            f"SELECT ((measured_at_ms + {JST_OFFSET_MS}) / {HOUR_MS}) * "
+            f"{HOUR_MS} - {JST_OFFSET_MS} AS hour_start_ms, "
+            "COUNT(*) AS samples, SUM(temperature) AS temperature_sum, "
+            "MIN(temperature) AS temperature_min, "
+            "MAX(temperature) AS temperature_max, SUM(humidity) AS humidity_sum, "
+            "MIN(humidity) AS humidity_min, MAX(humidity) AS humidity_max "
+            "FROM readings GROUP BY hour_start_ms ORDER BY hour_start_ms"
+        )
+        actual_rows = db.execute("SELECT * FROM hourly_stats ORDER BY hour_start_ms")
+        hours_compared = 0
+        samples = 0
+        for expected, actual in zip_longest(expected_rows, actual_rows):
+            hours_compared += 1
+            if (
+                expected is None
+                or actual is None
+                or expected["hour_start_ms"] != actual["hour_start_ms"]
+            ):
+                mismatch_count += 1
+                if len(mismatches) < 20:
+                    mismatches.append(
+                        {
+                            "hour_start_ms": expected["hour_start_ms"]
+                            if expected
+                            else None,
+                            "stored_hour_start_ms": actual["hour_start_ms"]
+                            if actual
+                            else None,
+                        }
+                    )
+                continue
+            samples += actual["samples"]
+            for field in fields:
+                left, right = expected[field], actual[field]
+                equal = (
+                    math.isclose(left, right, rel_tol=1e-9, abs_tol=1e-6)
+                    if field.endswith("_sum")
+                    else left == right
+                )
+                if not equal:
+                    mismatch_count += 1
+                    if len(mismatches) < 20:
+                        mismatches.append(
+                            {
+                                "hour_start_ms": expected["hour_start_ms"],
+                                "field": field,
+                                "readings": left,
+                                "hourly_stats": right,
+                            }
+                        )
+        readings_count = db.execute("SELECT COUNT(*) FROM readings").fetchone()[0]
+    return {
+        "ok": ready
+        and integrity == "ok"
+        and mismatch_count == 0
+        and samples == readings_count,
+        "ready": ready,
+        "integrity_check": integrity,
+        "readings_count": readings_count,
+        "hourly_samples": samples,
+        "hours_compared": hours_compared,
+        "mismatch_count": mismatch_count,
+        "mismatches": mismatches,
+    }
 
 
 def validate_daily_stats(db_path):
@@ -310,7 +577,7 @@ def validate_daily_stats(db_path):
                     )
 
     with connect(db_path) as db:
-        ready = db.execute("PRAGMA user_version").fetchone()[0] == DAILY_STATS_VERSION
+        ready = db.execute("PRAGMA user_version").fetchone()[0] >= DAILY_STATS_VERSION
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         raw_totals = dict(
             db.execute(

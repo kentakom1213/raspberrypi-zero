@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
@@ -25,7 +26,7 @@ class DailyStatsTests(unittest.TestCase):
     def test_empty_database_and_first_measurements(self):
         storage.initialize(self.db_path)
         with storage.connect(self.db_path) as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 1)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 2)
             self.assertEqual(
                 db.execute("SELECT COUNT(*) FROM daily_stats").fetchone()[0], 0
             )
@@ -67,10 +68,13 @@ class DailyStatsTests(unittest.TestCase):
             self.assertEqual(
                 db.execute("SELECT samples FROM daily_stats").fetchone()[0], 1
             )
+            self.assertEqual(
+                db.execute("SELECT samples FROM hourly_stats").fetchone()[0], 1
+            )
         self.assertTrue(storage.validate_daily_stats(self.db_path)["ok"])
 
     def test_legacy_database_uses_raw_data_until_rebuild(self):
-        with sqlite3.connect(self.db_path) as db:
+        with closing(sqlite3.connect(self.db_path)) as db, db:
             db.execute("""
                 CREATE TABLE readings (
                     id INTEGER PRIMARY KEY,

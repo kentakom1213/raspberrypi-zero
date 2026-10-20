@@ -110,6 +110,7 @@ def import_files(paths, output, timezone):
                 for key in ("imported", "duplicates", "invalid"):
                     report[key] += file_report[key]
         storage.rebuild_daily_stats(temporary)
+        storage.rebuild_hourly_stats(temporary)
         with storage.connect(temporary) as db:
             report["integrity_check"] = db.execute("PRAGMA integrity_check").fetchone()[
                 0
