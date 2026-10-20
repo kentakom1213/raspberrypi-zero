@@ -1,0 +1,144 @@
+"""SQLite storage for sensor readings."""
+
+import math
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+JST = ZoneInfo("Asia/Tokyo")
+JST_OFFSET_MS = 9 * 60 * 60 * 1000
+
+
+@contextmanager
+def connect(db_path):
+    connection = sqlite3.connect(db_path, timeout=30)
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout=30000")
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=FULL")
+        with connection:
+            yield connection
+    finally:
+        connection.close()
+
+
+def initialize(db_path):
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    with connect(db_path) as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS readings (
+                id INTEGER PRIMARY KEY,
+                measured_at_ms INTEGER NOT NULL,
+                temperature REAL NOT NULL,
+                humidity REAL NOT NULL,
+                ambient_sent_at_ms INTEGER,
+                UNIQUE (measured_at_ms, temperature, humidity)
+            )
+        """)
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS readings_time ON readings(measured_at_ms)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS readings_pending ON readings(id) WHERE ambient_sent_at_ms IS NULL"
+        )
+
+
+def validate_values(temperature, humidity):
+    if not math.isfinite(temperature) or not math.isfinite(humidity):
+        raise ValueError("temperature and humidity must be finite")
+    if not -40 <= temperature <= 80 or not 0 <= humidity <= 100:
+        raise ValueError("temperature or humidity is outside DHT22 range")
+
+
+def insert(db_path, measured_at_ms, temperature, humidity, sent=False):
+    validate_values(temperature, humidity)
+    with connect(db_path) as db:
+        cursor = db.execute(
+            "INSERT INTO readings (measured_at_ms, temperature, humidity, ambient_sent_at_ms) "
+            "VALUES (?, ?, ?, ?)",
+            (measured_at_ms, temperature, humidity, measured_at_ms if sent else None),
+        )
+        return cursor.lastrowid
+
+
+def pending(db_path, limit=60):
+    with connect(db_path) as db:
+        return db.execute(
+            "SELECT id, measured_at_ms, temperature, humidity FROM readings "
+            "WHERE ambient_sent_at_ms IS NULL ORDER BY id LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+
+def mark_sent(db_path, ids, sent_at_ms):
+    if not ids:
+        return
+    with connect(db_path) as db:
+        db.executemany(
+            "UPDATE readings SET ambient_sent_at_ms = ? WHERE id = ? AND ambient_sent_at_ms IS NULL",
+            ((sent_at_ms, row_id) for row_id in ids),
+        )
+
+
+def latest(db_path, limit):
+    with connect(db_path) as db:
+        rows = db.execute(
+            "SELECT measured_at_ms, temperature, humidity FROM readings "
+            "ORDER BY measured_at_ms DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return list(reversed(rows))
+
+
+def range_readings(db_path, start_ms, end_ms, limit):
+    with connect(db_path) as db:
+        return db.execute(
+            "SELECT measured_at_ms, temperature, humidity FROM readings "
+            "WHERE measured_at_ms >= ? AND measured_at_ms < ? "
+            "ORDER BY measured_at_ms, id LIMIT ?",
+            (start_ms, end_ms, limit),
+        ).fetchall()
+
+
+def summary(db_path, start_ms, end_ms):
+    with connect(db_path) as db:
+        row = db.execute(
+            "SELECT COUNT(*) AS count, AVG(temperature) AS temperature_avg, "
+            "MIN(temperature) AS temperature_min, MAX(temperature) AS temperature_max, "
+            "AVG(humidity) AS humidity_avg, MIN(humidity) AS humidity_min, "
+            "MAX(humidity) AS humidity_max "
+            "FROM readings WHERE measured_at_ms >= ? AND measured_at_ms < ?",
+            (start_ms, end_ms),
+        ).fetchone()
+    return dict(row)
+
+
+def grouped(db_path, start_ms, end_ms, interval):
+    bucket_ms = {"hour": 3600000, "day": 86400000}[interval]
+    # Japan Standard Time has no daylight saving time; group boundaries are JST.
+    expression = f"((measured_at_ms + {JST_OFFSET_MS}) / {bucket_ms}) * {bucket_ms} - {JST_OFFSET_MS}"
+    with connect(db_path) as db:
+        rows = db.execute(
+            f"SELECT {expression} AS bucket_start_ms, COUNT(*) AS count, "
+            "AVG(temperature) AS temperature_avg, MIN(temperature) AS temperature_min, "
+            "MAX(temperature) AS temperature_max, AVG(humidity) AS humidity_avg, "
+            "MIN(humidity) AS humidity_min, MAX(humidity) AS humidity_max "
+            "FROM readings WHERE measured_at_ms >= ? AND measured_at_ms < ? "
+            "GROUP BY bucket_start_ms ORDER BY bucket_start_ms",
+            (start_ms, end_ms),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def chart_row(row):
+    measured_at_ms = row["measured_at_ms"]
+    return {
+        "time": datetime.fromtimestamp(measured_at_ms / 1000, JST).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        ),
+        "temperature": row["temperature"],
+        "humidity": row["humidity"],
+    }

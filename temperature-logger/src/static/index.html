@@ -181,7 +181,7 @@
         </div>
       </div>
 
-      <p class="meta">最終送信: <span id="sentAtValue">未送信</span></p>
+      <p class="meta">最終測定: <span id="sentAtValue">未測定</span></p>
 
       <div class="chart-section">
         <h2>最近の推移</h2>
@@ -296,7 +296,7 @@
 
         humidityCard.className = `value humidity ${humidityLevel}`;
 
-        sentAtValue.textContent = data.sent_at ?? "未送信";
+        sentAtValue.textContent = data.sent_at ?? "未測定";
 
         if (data.last_error) {
           errorValue.textContent = data.last_error;

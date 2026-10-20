@@ -12,3 +12,6 @@ port = 8000
 
 [chart]
 max_points = 300
+
+[storage]
+path = "data/readings.db"
