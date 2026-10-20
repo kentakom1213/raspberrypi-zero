@@ -58,16 +58,25 @@ def import_files(paths, output, timezone):
                         try:
                             if None in row:
                                 raise ValueError("unexpected extra columns")
-                            stamp = datetime.strptime(
-                                row["created"].strip(), "%Y/%m/%d %H:%M:%S.%f"
+                            date_text, separator, millisecond_text = (
+                                row["created"].strip().rpartition(".")
                             )
+                            if not separator or not (
+                                1 <= len(millisecond_text) <= 3
+                                and millisecond_text.isascii()
+                                and millisecond_text.isdigit()
+                            ):
+                                raise ValueError(
+                                    "created must end in 1-3 millisecond digits"
+                                )
+                            stamp = datetime.strptime(date_text, "%Y/%m/%d %H:%M:%S")
                             elapsed = stamp.replace(tzinfo=timezone) - datetime(
                                 1970, 1, 1, tzinfo=utc_timezone.utc
                             )
                             measured_at_ms = (
                                 elapsed.days * 86400000
                                 + elapsed.seconds * 1000
-                                + elapsed.microseconds // 1000
+                                + int(millisecond_text)
                             )
                             temperature = float(row["気温 (℃)"].strip())
                             humidity = float(row["湿度 (%)"].strip())

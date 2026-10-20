@@ -34,7 +34,11 @@ class PersistenceTests(TempDatabaseTest):
                     ["2026/6/1 0:30:00.123", "20", "50", ""],
                     ["2026/6/1 0:30:00.123", "20", "50", ""],
                 ],
-                [["2026/6/1 1:30:00.4", "22", "60", ""], ["bad", "22", "60", ""]],
+                [
+                    ["2026/6/1 1:30:00.84", "22", "60", ""],
+                    ["2026/6/1 1:31:00.4", "23", "61", ""],
+                    ["bad", "22", "60", ""],
+                ],
             ],
         ):
             with path.open("w", encoding="utf-8-sig", newline="") as output:
@@ -43,12 +47,20 @@ class PersistenceTests(TempDatabaseTest):
                 writer.writerows(rows)
         report = import_files(paths, self.db_path, ZoneInfo("Asia/Tokyo"))
         self.assertEqual(
-            (report["imported"], report["duplicates"], report["invalid"]), (2, 1, 1)
+            (report["imported"], report["duplicates"], report["invalid"]), (3, 1, 1)
         )
-        self.assertEqual([f["imported"] for f in report["files"]], [1, 1])
-        self.assertEqual(report["files"][1]["errors"][0]["line"], 3)
+        self.assertEqual([f["imported"] for f in report["files"]], [1, 2])
+        self.assertEqual(report["files"][1]["errors"][0]["line"], 4)
         self.assertEqual(report["integrity_check"], "ok")
         self.assertEqual(report["oldest"], "2026-06-01T00:30:00.123000+09:00")
+        self.assertEqual(report["newest"], "2026-06-01T01:31:00.004000+09:00")
+        self.assertEqual(
+            [
+                row["measured_at_ms"] % 1000
+                for row in storage.range_readings(self.db_path, 0, 2**63 - 1, 10)
+            ],
+            [123, 84, 4],
+        )
         self.assertEqual(len(storage.pending(self.db_path)), 0)
         with self.assertRaises(FileExistsError):
             import_files(paths, self.db_path, ZoneInfo("Asia/Tokyo"))

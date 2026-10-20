@@ -6,7 +6,7 @@ Ambient への再送には [公式の一括送信 API](https://ambidata.io/blog/
 
 ## CSV から初期 DB を作る
 
-CSV の `created` は `Asia/Tokyo` の現地時刻として扱います．CSV は UTF-8 BOM 付きで，`created`，`気温 (℃)`，`湿度 (%)` 列を名前で読みます．追加列は無視します．日時の形式は `YYYY/M/D H:M:S.fff` です．
+CSV の `created` は `Asia/Tokyo` の現地時刻として扱います．CSV は UTF-8 BOM 付きで，`created`，`気温 (℃)`，`湿度 (%)` 列を名前で読みます．追加列は無視します．日時の形式は `YYYY/M/D H:M:S.fff` です．Ambient CSV ではミリ秒の先頭の 0 が省略されるため，`.84` は 84 ミリ秒，`.4` は 4 ミリ秒として読みます．
 
 ```sh
 cd temperature-logger
