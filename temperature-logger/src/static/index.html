@@ -2,7 +2,7 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <title>DHT22 Monitor</title>
+    <title>温湿度モニター</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -66,6 +66,26 @@
       h1 {
         margin-top: 0;
         color: var(--accent);
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin-bottom: 20px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #eee;
+      }
+
+      .nav a {
+        color: #555;
+        text-decoration: none;
+      }
+
+      .nav a[aria-current="page"] {
+        color: #222;
+        font-weight: 700;
+        border-bottom: 2px solid currentColor;
       }
 
       .values {
@@ -165,7 +185,11 @@
 
   <body>
     <div class="card unknown" id="mainCard">
-      <h1>DHT22 Monitor</h1>
+      <nav class="nav" aria-label="ページ">
+        <a href="/" aria-current="page">現在の温湿度</a>
+        <a href="/stats">統計・履歴</a>
+      </nav>
+      <h1>温湿度モニター</h1>
 
       <span class="status" id="statusLabel">不明</span>
 
@@ -191,7 +215,7 @@
       </div>
 
       <div class="error" id="errorBox">
-        last error: <span id="errorValue"></span>
+        最終エラー: <span id="errorValue"></span>
       </div>
     </div>
 

@@ -3,7 +3,7 @@
 import math
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -117,9 +117,22 @@ def summary(db_path, start_ms, end_ms):
 
 
 def grouped(db_path, start_ms, end_ms, interval):
-    bucket_ms = {"hour": 3600000, "day": 86400000}[interval]
-    # Japan Standard Time has no daylight saving time; group boundaries are JST.
-    expression = f"((measured_at_ms + {JST_OFFSET_MS}) / {bucket_ms}) * {bucket_ms} - {JST_OFFSET_MS}"
+    if interval in ("hour", "day"):
+        bucket_ms = {"hour": 3600000, "day": 86400000}[interval]
+        # Japan Standard Time has no daylight saving time; group boundaries are JST.
+        expression = (
+            f"((measured_at_ms + {JST_OFFSET_MS}) / {bucket_ms}) "
+            f"* {bucket_ms} - {JST_OFFSET_MS}"
+        )
+    else:
+        # SQLite's weekday 0 is Sunday; the preceding six days start on Monday.
+        modifier = (
+            "'weekday 0', '-6 days'" if interval == "week" else "'start of month'"
+        )
+        expression = (
+            "CAST(strftime('%s', date(measured_at_ms / 1000, 'unixepoch', "
+            f"'+9 hours', {modifier})) AS INTEGER) * 1000 - {JST_OFFSET_MS}"
+        )
     with connect(db_path) as db:
         rows = db.execute(
             f"SELECT {expression} AS bucket_start_ms, COUNT(*) AS count, "
@@ -131,6 +144,46 @@ def grouped(db_path, start_ms, end_ms, interval):
             (start_ms, end_ms),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def empty_buckets(start_ms, end_ms, interval):
+    """Build empty JST calendar periods without loading individual readings."""
+    current = datetime.fromtimestamp(start_ms / 1000, JST)
+    current = current.replace(minute=0, second=0, microsecond=0)
+    if interval != "hour":
+        current = current.replace(hour=0)
+    if interval == "week":
+        current -= timedelta(days=current.weekday())
+    elif interval == "month":
+        current = current.replace(day=1)
+
+    result = []
+    while int(current.timestamp() * 1000) < end_ms:
+        if len(result) >= 10000:
+            raise ValueError("time range contains more than 10000 buckets")
+        bucket_start_ms = int(current.timestamp() * 1000)
+        result.append(
+            {
+                "bucket_start_ms": bucket_start_ms,
+                "count": 0,
+                "temperature_avg": None,
+                "temperature_min": None,
+                "temperature_max": None,
+                "humidity_avg": None,
+                "humidity_min": None,
+                "humidity_max": None,
+            }
+        )
+        if interval == "hour":
+            current += timedelta(hours=1)
+        elif interval == "day":
+            current += timedelta(days=1)
+        elif interval == "week":
+            current += timedelta(weeks=1)
+        else:
+            year, month = divmod(current.year * 12 + current.month, 12)
+            current = current.replace(year=year, month=month + 1)
+    return result
 
 
 def chart_row(row):

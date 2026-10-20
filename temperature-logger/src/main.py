@@ -1,7 +1,7 @@
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -125,10 +125,26 @@ def query_parameters():
         raise ValueError(f"invalid time range: {error}") from error
 
 
+def iso_to_bound_ms(value):
+    moment = datetime.fromisoformat(value)
+    if moment.tzinfo is None:
+        raise ValueError("from and to must include a time zone")
+    duration = moment.astimezone(timezone.utc) - datetime(
+        1970, 1, 1, tzinfo=timezone.utc
+    )
+    microseconds = (
+        duration.days * 86400 + duration.seconds
+    ) * 1_000_000 + duration.microseconds
+    # A reading is stored at millisecond precision; round the bound upward.
+    return (microseconds + 999) // 1000
+
+
 @app.after_request
 def add_cache_headers(response):
     path = request.path
-    if path in {"/", "/health", "/api/readings"} or path.startswith("/static/"):
+    if path in {"/", "/stats", "/health", "/api/readings"} or path.startswith(
+        "/static/"
+    ):
         response.headers["Cache-Control"] = (
             "public, max-age=60, s-maxage=60, stale-while-revalidate=60"
         )
@@ -140,6 +156,11 @@ def add_cache_headers(response):
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
+
+
+@app.route("/stats")
+def stats_page():
+    return send_from_directory(app.static_folder, "stats.html")
 
 
 @app.route("/health")
@@ -175,13 +196,43 @@ def readings_json():
 @app.route("/api/stats")
 def stats_json():
     try:
-        start_ms, end_ms = query_parameters()
         interval = request.args.get("interval")
+        group_by = request.args.get("group_by")
         if interval not in (None, "hour", "day"):
             raise ValueError("interval must be hour or day")
-        if set(request.args) - {"start_ms", "end_ms", "interval"}:
+        if group_by not in (None, "hour", "day", "week", "month"):
+            raise ValueError("group_by must be hour, day, week or month")
+        if interval and group_by:
+            raise ValueError("interval and group_by cannot be combined")
+        if set(request.args) - {
+            "start_ms",
+            "end_ms",
+            "interval",
+            "group_by",
+            "from",
+            "to",
+        }:
             raise ValueError("unknown query parameter")
-    except ValueError as error:
+        if "from" in request.args or "to" in request.args:
+            if "start_ms" in request.args or "end_ms" in request.args:
+                raise ValueError("from/to cannot be combined with start_ms/end_ms")
+            if "from" not in request.args or "to" not in request.args:
+                raise ValueError("from and to are both required")
+            start_ms = iso_to_bound_ms(request.args["from"])
+            end_ms = iso_to_bound_ms(request.args["to"])
+        else:
+            start_ms, end_ms = query_parameters()
+            if group_by and (
+                "start_ms" not in request.args or "end_ms" not in request.args
+            ):
+                raise ValueError("group_by requires from/to or start_ms/end_ms")
+        if start_ms < 0 or end_ms <= start_ms:
+            raise ValueError("start must be nonnegative and less than end")
+        buckets = None
+        if group_by:
+            # Validate the number of calendar periods before querying SQLite.
+            buckets = storage.empty_buckets(start_ms, end_ms, group_by)
+    except (ValueError, OverflowError, OSError) as error:
         return jsonify({"error": str(error)}), 400
     result = {
         "start_ms": start_ms,
@@ -191,6 +242,13 @@ def stats_json():
     if interval:
         result["interval"] = interval
         result["buckets"] = storage.grouped(DB_PATH, start_ms, end_ms, interval)
+    elif group_by:
+        result["group_by"] = group_by
+        rows = storage.grouped(DB_PATH, start_ms, end_ms, group_by)
+        by_start = {row["bucket_start_ms"]: row for row in rows}
+        result["buckets"] = [
+            by_start.get(bucket["bucket_start_ms"], bucket) for bucket in buckets
+        ]
     return jsonify(result)
 
 

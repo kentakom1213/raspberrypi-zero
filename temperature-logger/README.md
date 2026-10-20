@@ -25,11 +25,16 @@ python3 import_csv.py --timezone Asia/Tokyo --output /path/to/readings-import.db
 GET /api/readings?start_ms=1780239600000&end_ms=1780326000000&limit=1000
 ```
 
-`GET /api/stats` は指定期間の件数，気温・湿度それぞれの平均・最小・最大を `summary` に返します．`interval=hour` または `interval=day` を付けると，JST の時間・日境界で集計した `buckets` も返します．空期間の件数は 0，統計値は `null` です．
+`GET /api/stats` は指定期間の件数，気温・湿度それぞれの平均・最小・最大を `summary` に返します．従来の `start_ms` 以上・`end_ms` 未満という指定，`interval=hour|day`，`summary` と `buckets` の形式は維持します．`interval` 指定時の `buckets` は従来どおり測定がある区間だけです．
+
+新しい `group_by=hour|day|week|month` は `from`・`to` にタイムゾーン付き ISO 8601 日時を両方指定します（または `start_ms`・`end_ms` を両方指定します）．`from` を含み `to` を含みません．`interval` と `group_by` は同時指定できません．`group_by` の `buckets` は欠測区間も返し，その区間は `count=0`，平均・最小・最大が `null` です．各行の `bucket_start_ms` は JST の区間開始時刻です．週は月曜日開始，月は毎月1日開始です．表示範囲は最大 10,000 区間です．全期間の `summary` は生データから直接計算します．
 
 ```text
 GET /api/stats?start_ms=1780239600000&end_ms=1780326000000&interval=hour
+GET /api/stats?group_by=week&from=2026-10-05T00:00:00%2B09:00&to=2026-11-02T00:00:00%2B09:00
 ```
+
+`/` は現在の温湿度，`/stats` は日別（直近30日）・週別（直近26週）・月別（直近12か月）の統計ページです．いずれも JST の暦を基準とし，進行中の期間を表示します．統計ページの集計単位・指標・開始日を URL の `group_by`・`metric`・`start` に保持します．
 
 ## Ubuntu から Raspberry Pi へ転送する
 
