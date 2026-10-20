@@ -237,7 +237,12 @@ def stats_json():
     result = {
         "start_ms": start_ms,
         "end_ms": end_ms,
-        "summary": storage.summary(DB_PATH, start_ms, end_ms),
+        "summary": storage.summary(
+            DB_PATH,
+            start_ms,
+            end_ms,
+            use_daily=group_by != "hour" and interval != "hour",
+        ),
     }
     if interval:
         result["interval"] = interval

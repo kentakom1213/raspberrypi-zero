@@ -67,6 +67,7 @@ class PersistenceTests(TempDatabaseTest):
             [123, 84, 4],
         )
         self.assertEqual(len(storage.pending(self.db_path)), 0)
+        self.assertTrue(storage.validate_daily_stats(self.db_path)["ok"])
         with self.assertRaises(FileExistsError):
             import_files(paths, self.db_path, ZoneInfo("Asia/Tokyo"))
 
@@ -146,6 +147,7 @@ class ApiTests(TempDatabaseTest):
             with self.assertRaises(OSError):
                 self.main.send_pending()
         self.assertEqual(len(storage.pending(self.db_path)), 1)
+        self.assertTrue(storage.validate_daily_stats(self.db_path)["ok"])
         response = types.SimpleNamespace(raise_for_status=lambda: None)
         with patch.object(self.main.requests, "post", return_value=response) as post:
             self.main.send_pending()

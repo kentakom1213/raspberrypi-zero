@@ -13,7 +13,7 @@ cd temperature-logger
 python3 import_csv.py --timezone Asia/Tokyo --output /path/to/readings-import.db /path/to/data*.csv > /path/to/import-report.json
 ```
 
-指定した CSV を直接読み，1 つの DB を作ります．同じ時刻・気温・湿度の組を重複と見なし，取り込んだ行は Ambient 送信済みとして記録します．不正行は飛ばし，ファイル名・行番号・理由・元の値を JSON に記録します．レポートにはファイルごとの読み込み・登録・重複・不正件数，合計，最古・最新日時，`integrity_check` が含まれます．出力 DB が既にある場合は失敗し，上書きしません．
+指定した CSV を直接読み，1 つの DB を作ります．同じ時刻・気温・湿度の組を重複と見なし，取り込んだ行は Ambient 送信済みとして記録します．不正行は飛ばし，ファイル名・行番号・理由・元の値を JSON に記録します．レポートにはファイルごとの読み込み・登録・重複・不正件数，合計，最古・最新日時，`integrity_check` が含まれます．日次集計も SQL で作成します．出力 DB が既にある場合は失敗し，上書きしません．
 
 ## API
 
@@ -27,7 +27,7 @@ GET /api/readings?start_ms=1780239600000&end_ms=1780326000000&limit=1000
 
 `GET /api/stats` は指定期間の件数，気温・湿度それぞれの平均・最小・最大を `summary` に返します．従来の `start_ms` 以上・`end_ms` 未満という指定，`interval=hour|day`，`summary` と `buckets` の形式は維持します．`interval` 指定時の `buckets` は従来どおり測定がある区間だけです．
 
-新しい `group_by=hour|day|week|month` は `from`・`to` にタイムゾーン付き ISO 8601 日時を両方指定します（または `start_ms`・`end_ms` を両方指定します）．`from` を含み `to` を含みません．`interval` と `group_by` は同時指定できません．`group_by` の `buckets` は欠測区間も返し，その区間は `count=0`，平均・最小・最大が `null` です．各行の `bucket_start_ms` は JST の区間開始時刻です．週は月曜日開始，月は毎月1日開始です．表示範囲は最大 10,000 区間です．全期間の `summary` は生データから直接計算します．
+新しい `group_by=hour|day|week|month` は `from`・`to` にタイムゾーン付き ISO 8601 日時を両方指定します（または `start_ms`・`end_ms` を両方指定します）．`from` を含み `to` を含みません．`interval` と `group_by` は同時指定できません．`group_by` の `buckets` は欠測区間も返し，その区間は `count=0`，平均・最小・最大が `null` です．各行の `bucket_start_ms` は JST の区間開始時刻です．週は月曜日開始，月は毎月1日開始です．表示範囲は最大 10,000 区間です．
 
 ```text
 GET /api/stats?start_ms=1780239600000&end_ms=1780326000000&interval=hour
@@ -36,14 +36,39 @@ GET /api/stats?group_by=week&from=2026-10-05T00:00:00%2B09:00&to=2026-11-02T00:0
 
 `/` は現在の温湿度，`/stats` は日別（直近30日）・週別（直近26週）・月別（直近12か月）の統計ページです．いずれも JST の暦を基準とし，進行中の期間を表示します．統計ページの集計単位・指標・開始日を URL の `group_by`・`metric`・`start` に保持します．
 
-## Ubuntu から Raspberry Pi へ転送する
+## 日次集計
 
-以下は手順です．このリポジトリの作業では SSH 接続，転送，サービス停止，DB 置換を実行しません．接続先と既存 DB の状態を確認し，転送先への書き込みを許可してから進めてください．特にサービス停止と DB 置換は，その直前に改めて確認してください．
+`readings` は唯一の正本で，JST 日付ごとの `daily_stats` は再生成可能な集計です．新しい測定値は同一トランザクションで両テーブルへ記録します．平均値は日別の合計を件数で割って算出します．`PRAGMA user_version=1` は初期集計が完了した印です．既存 DB に新コードだけを適用した場合は `0` のままとなり，API は生データから正確に計算します．通常起動時に全件再集計は行いません．
 
-1. Ubuntu 上でインポートレポートを確認し，`integrity_check` が `ok` であることを確かめます．`ssh powell@<pi-host>` で接続先を読み取り専用で確認し，`systemctl status temperature-logger.service`，`ls -la /home/powell/raspberrypi-zero/temperature-logger/data` で既存 DB と稼働状態を確認します．
-2. 転送先への書き込みを承認した後，転送先の `data` ディレクトリに一意な名前のステージングディレクトリを `mktemp -d` で作り，`scp /path/to/readings-import.db powell@<pi-host>:<ステージングディレクトリ>/readings.db` で転送します．事前にそのファイルが存在しないことを確認します．Pi 上の Python でステージング DB に `PRAGMA integrity_check` を実行し，`ok` を確認します．
-3. サービス停止を承認した後，Pi で `sudo systemctl stop temperature-logger.service` を実行します．`systemctl is-active temperature-logger.service` で停止を確認します．既存の `data/readings.db` があれば，Python の `sqlite3.Connection.backup()` で時刻付きの別ファイルへ完全なバックアップを作り，そのバックアップにも `PRAGMA integrity_check` を実行します．WAL ファイルだけを無視した単純なファイルコピーは使いません．
-4. 既存 DB にインポート後の測定値がある場合は，既存 DB をステージング DB に接続し，`INSERT OR IGNORE` で `readings` の全列を合流します．`ambient_sent_at_ms` も保持します．スキーマが一致しない場合は置換を中止します．合流後の件数と `PRAGMA integrity_check` を確認し，ステージング DB をチェックポイントします．
-5. DB 置換を承認した後，既存 DB の `-wal` と `-shm` が残っていないことを確認し，同じファイルシステム上のステージング DB を `data/readings.db` へ原子的に移動します．サービスの実行ユーザー `powell` が読み書きできる所有権・権限を確認してから `sudo systemctl start temperature-logger.service` を実行します．`/health` と `/api/readings`，サービスログを確認します．問題があればサービスを停止し，バックアップから復元します．
+JST の日境界にそろう日・週・月集計と全期間の `summary` は `daily_stats` を読みます．任意時刻の範囲は両端を含む日を正確に扱うため，従来の `readings` 集計に戻します．時間別集計も `readings` を使います．DB の整合性確認は API リクエスト中には行いません．
 
-既存 DB がない場合でも，サービスを止める操作と DB を配置する操作の確認は省略しません．
+初回の集計はサービス停止中に Pi の既存 DB 上で明示的に実行します．再実行すると `daily_stats` を全件再構築します．`DELETE` と再集計 `INSERT` は単一トランザクションなので，失敗時は元の集計へロールバックします．`readings` は変更しません．
+
+```sh
+cd /home/powell/raspberrypi-zero/temperature-logger
+.venv/bin/python rebuild_daily_stats.py
+.venv/bin/python rebuild_daily_stats.py --check
+```
+
+`--db /path/to/readings.db` で対象 DB を指定できます．検証は総件数，気温・湿度の合計・最小・最大，日別の件数と統計値，`PRAGMA integrity_check` を比較し，不一致なら終了コード `1` を返します．
+
+### デプロイと復元
+
+運用中の DB を Ubuntu 側の古い DB で置換しません．Pi での手順は次のとおりです．サービス停止，DB 変更，デプロイには実行前の承認が必要です．
+
+1. Pi の Git 状態，サービス，DB 件数を確認します．稼働中に Python 標準の `sqlite3.Connection.backup()` で一意な名前のバックアップを作り，バックアップの `integrity_check` を確認します．単純なファイルコピーは WAL の未反映データを落とすため使いません．
+2. `temperature-logger.service` を停止し，停止を確認します．停止直後にもバックアップを取り，停止直前までの測定値を保全します．
+3. Pi で `git pull --ff-only` し，`rebuild_daily_stats.py` を実行します．`--check` が成功し，DB 件数と `integrity_check` が正常であることを確かめます．
+4. サービスを起動し，`/health`，`/api/readings`，`/api/stats`，新しい測定と Ambient 送信を確認します．
+5. 再集計に失敗した場合，サービスを起動せず原因を調べます．トランザクションにより既存の `readings` と以前の `daily_stats` は保持されます．旧コードに戻す場合は，サービス停止中に旧コミットへ一時的に切り替えてから起動します．旧コードは追加の `daily_stats` を参照しません．DB 自体を復元する必要がある場合は，サービス停止中に停止後バックアップを `sqlite3.Connection.backup()` で一時 DB に複製し，整合性・WAL の状態を確認してから既存 DB と入れ替えます．
+
+### 応答時間の測定
+
+同じ条件で各 URL を初回と2回目に呼び，`curl` の `time_total`（HTTP 応答完了まで）を記録します．次の日時は 2026-10-20 時点の例です．Pi で稼働中のアプリに対し，マイグレーション前後で同じ URL を使います．
+
+```sh
+curl -sS -o /dev/null -w '%{time_total}\n' 'http://127.0.0.1:8000/api/stats?group_by=day&from=2026-09-21T00:00:00%2B09:00&to=2026-10-21T00:00:00%2B09:00'
+curl -sS -o /dev/null -w '%{time_total}\n' 'http://127.0.0.1:8000/api/stats?group_by=week&from=2026-04-27T00:00:00%2B09:00&to=2026-10-26T00:00:00%2B09:00'
+curl -sS -o /dev/null -w '%{time_total}\n' 'http://127.0.0.1:8000/api/stats?group_by=month&from=2025-11-01T00:00:00%2B09:00&to=2026-11-01T00:00:00%2B09:00'
+curl -sS -o /dev/null -w '%{time_total}\n' 'http://127.0.0.1:8000/api/stats?from=2025-11-01T00:00:00%2B09:00&to=2026-11-01T00:00:00%2B09:00'
+```
