@@ -2,442 +2,72 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <title>温湿度モニター</title>
+    <title>現在の温湿度 | 温湿度モニター</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <style>
-      :root {
-        --accent: #666;
-        --accent-bg: #f5f5f5;
-        --accent-soft: #fafafa;
-      }
-
-      body {
-        font-family: system-ui, sans-serif;
-        max-width: 720px;
-        margin: 40px auto;
-        padding: 0 16px;
-        line-height: 1.7;
-        color: #222;
-        background: linear-gradient(160deg, var(--accent-bg), #fafafa);
-        min-height: 100vh;
-      }
-
-      .card {
-        background: rgba(255, 255, 255, 0.92);
-        border: 1px solid #ddd;
-        border-radius: 16px;
-        padding: 24px;
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-      }
-
-      .card.cold {
-        --accent: #2563eb;
-        --accent-bg: #eff6ff;
-        --accent-soft: #dbeafe;
-      }
-
-      .card.comfortable {
-        --accent: #16a34a;
-        --accent-bg: #f0fdf4;
-        --accent-soft: #dcfce7;
-      }
-
-      .card.warm {
-        --accent: #f59e0b;
-        --accent-bg: #fffbeb;
-        --accent-soft: #fef3c7;
-      }
-
-      .card.hot {
-        --accent: #dc2626;
-        --accent-bg: #fef2f2;
-        --accent-soft: #fee2e2;
-      }
-
-      .card.unknown {
-        --accent: #666;
-        --accent-bg: #f5f5f5;
-        --accent-soft: #fafafa;
-      }
-
-      h1 {
-        margin-top: 0;
-        color: var(--accent);
-      }
-
-      .nav {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        margin-bottom: 20px;
-        padding-bottom: 12px;
-        border-bottom: 1px solid #eee;
-      }
-
-      .nav a {
-        color: #555;
-        text-decoration: none;
-      }
-
-      .nav a[aria-current="page"] {
-        color: #222;
-        font-weight: 700;
-        border-bottom: 2px solid currentColor;
-      }
-
-      .values {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        margin: 24px 0;
-      }
-
-      .value {
-        border: 1px solid #eee;
-        border-radius: 12px;
-        padding: 16px;
-        background: var(--accent-soft);
-      }
-
-      .value.humidity.dry {
-        background: #fff7ed;
-      }
-
-      .value.humidity.comfortable {
-        background: #f0fdf4;
-      }
-
-      .value.humidity.humid {
-        background: #eef2ff;
-      }
-
-      .label {
-        font-size: 14px;
-        color: #666;
-      }
-
-      .number {
-        font-size: 40px;
-        font-weight: 700;
-        margin-top: 8px;
-        color: var(--accent);
-      }
-
-      .meta {
-        color: #666;
-        font-size: 14px;
-      }
-
-      .status {
-        display: inline-block;
-        margin-top: 4px;
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 13px;
-        color: white;
-        background: var(--accent);
-      }
-
-      .chart-section {
-        margin-top: 24px;
-      }
-
-      .chart-section h2 {
-        margin-bottom: 12px;
-        font-size: 20px;
-      }
-
-      .chart-area {
-        height: 320px;
-        border: 1px solid #eee;
-        border-radius: 12px;
-        padding: 12px;
-        background: rgba(255, 255, 255, 0.7);
-      }
-
-      .error {
-        display: none;
-        margin-top: 16px;
-        padding: 12px;
-        border-radius: 8px;
-        background: #fff1f1;
-        color: #9b1c1c;
-      }
-
-      @media (max-width: 560px) {
-        .values {
-          grid-template-columns: 1fr;
-        }
-
-        .number {
-          font-size: 36px;
-        }
-
-        .chart-area {
-          height: 280px;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="/static/app.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+    <script src="/static/monitor.js" defer></script>
   </head>
-
   <body>
-    <div class="card unknown" id="mainCard">
-      <nav class="nav" aria-label="ページ">
-        <a href="/" aria-current="page">現在の温湿度</a>
-        <a href="/stats">統計・履歴</a>
-      </nav>
-      <h1>温湿度モニター</h1>
+    <main>
+      <header class="site-header">
+        <a class="brand" href="/">温湿度モニター</a>
+        <nav class="nav" aria-label="ページ">
+          <a href="/" aria-current="page">現在の温湿度</a>
+          <a href="/stats">統計・履歴</a>
+        </nav>
+      </header>
 
-      <span class="status" id="statusLabel">不明</span>
-
-      <div class="values">
-        <div class="value temperature">
-          <div class="label">気温</div>
-          <div class="number" id="temperatureValue">-- ℃</div>
+      <section class="monitor-heading" aria-label="測定状態">
+        <p class="eyebrow">LIVE MONITOR</p>
+        <h1>現在の温湿度</h1>
+        <p class="muted">室内の空気を，いつでも見やすく．</p>
+        <div class="current-status" id="currentStatus" data-state="unknown" role="status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="statusLabel">測定値を確認しています</span>
+          <span class="measured-at" id="measuredAt">最終測定：—</span>
         </div>
+      </section>
 
-        <div class="value humidity" id="humidityCard">
-          <div class="label">湿度</div>
-          <div class="number" id="humidityValue">-- %</div>
+      <section class="current-values" aria-label="現在値">
+        <div class="metric-temperature">
+          <span class="metric-label">気温</span>
+          <span class="metric-value"><span id="temperatureValue">—</span><small>℃</small></span>
         </div>
-      </div>
-
-      <p class="meta">最終測定: <span id="sentAtValue">未測定</span></p>
-
-      <div class="chart-section">
-        <h2>最近の推移</h2>
-        <div class="chart-area">
-          <canvas id="sensorChart"></canvas>
+        <div class="metric-humidity">
+          <span class="metric-label">湿度</span>
+          <span class="metric-value"><span id="humidityValue">—</span><small>%</small></span>
         </div>
-      </div>
+      </section>
 
-      <div class="error" id="errorBox">
-        最終エラー: <span id="errorValue"></span>
-      </div>
-    </div>
+      <p class="notice" id="notice" role="alert" hidden></p>
+      <details class="error-details" id="errorDetails" hidden>
+        <summary>センサー・Ambient のエラー</summary>
+        <p id="errorValue"></p>
+      </details>
 
-    <script>
-      let sensorChart = null;
-
-      async function fetchJson(path) {
-        const response = await fetch(path);
-
-        if (!response.ok) {
-          throw new Error(`failed to fetch ${path}`);
-        }
-
-        return await response.json();
-      }
-
-      function getTemperatureLevel(temperature) {
-        if (temperature === null || temperature === undefined) {
-          return {
-            level: "unknown",
-            label: "不明",
-          };
-        }
-
-        if (temperature < 15) {
-          return {
-            level: "cold",
-            label: "寒め",
-          };
-        }
-
-        if (temperature < 25) {
-          return {
-            level: "comfortable",
-            label: "快適",
-          };
-        }
-
-        if (temperature < 30) {
-          return {
-            level: "warm",
-            label: "暖かめ",
-          };
-        }
-
-        return {
-          level: "hot",
-          label: "暑め",
-        };
-      }
-
-      function getHumidityLevel(humidity) {
-        if (humidity === null || humidity === undefined) {
-          return "unknown";
-        }
-
-        if (humidity < 40) {
-          return "dry";
-        }
-
-        if (humidity <= 70) {
-          return "comfortable";
-        }
-
-        return "humid";
-      }
-
-      function formatTemperature(value) {
-        if (value === null || value === undefined) {
-          return "-- ℃";
-        }
-
-        return `${Number(value).toFixed(1)} ℃`;
-      }
-
-      function formatHumidity(value) {
-        if (value === null || value === undefined) {
-          return "-- %";
-        }
-
-        return `${Number(value).toFixed(1)} %`;
-      }
-
-      function updateCurrentValues(data) {
-        const mainCard = document.getElementById("mainCard");
-        const statusLabel = document.getElementById("statusLabel");
-        const temperatureValue = document.getElementById("temperatureValue");
-        const humidityValue = document.getElementById("humidityValue");
-        const humidityCard = document.getElementById("humidityCard");
-        const sentAtValue = document.getElementById("sentAtValue");
-        const errorBox = document.getElementById("errorBox");
-        const errorValue = document.getElementById("errorValue");
-
-        const temperatureLevel = getTemperatureLevel(data.temperature);
-        const humidityLevel = getHumidityLevel(data.humidity);
-
-        mainCard.className = `card ${temperatureLevel.level}`;
-        statusLabel.textContent = temperatureLevel.label;
-
-        temperatureValue.textContent = formatTemperature(data.temperature);
-        humidityValue.textContent = formatHumidity(data.humidity);
-
-        humidityCard.className = `value humidity ${humidityLevel}`;
-
-        sentAtValue.textContent = data.sent_at ?? "未測定";
-
-        if (data.last_error) {
-          errorValue.textContent = data.last_error;
-          errorBox.style.display = "block";
-        } else {
-          errorValue.textContent = "";
-          errorBox.style.display = "none";
-        }
-      }
-
-      function createChart(readings) {
-        const canvas = document.getElementById("sensorChart");
-
-        const labels = readings.map((row) => row.time);
-        const temperatures = readings.map((row) => row.temperature);
-        const humidities = readings.map((row) => row.humidity);
-
-        sensorChart = new Chart(canvas, {
-          type: "line",
-          data: {
-            labels,
-            datasets: [
-              {
-                label: "気温 (℃)",
-                data: temperatures,
-                yAxisID: "yTemperature",
-                tension: 0.3,
-                pointRadius: 0,
-                borderWidth: 2,
-              },
-              {
-                label: "湿度 (%)",
-                data: humidities,
-                yAxisID: "yHumidity",
-                tension: 0.3,
-                pointRadius: 0,
-                borderWidth: 2,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            interaction: {
-              mode: "index",
-              intersect: false,
-            },
-            plugins: {
-              legend: {
-                position: "top",
-              },
-              tooltip: {
-                enabled: true,
-              },
-            },
-            scales: {
-              x: {
-                ticks: {
-                  maxTicksLimit: 6,
-                },
-              },
-              yTemperature: {
-                type: "linear",
-                position: "left",
-                title: {
-                  display: true,
-                  text: "気温 (℃)",
-                },
-              },
-              yHumidity: {
-                type: "linear",
-                position: "right",
-                title: {
-                  display: true,
-                  text: "湿度 (%)",
-                },
-                grid: {
-                  drawOnChartArea: false,
-                },
-              },
-            },
-          },
-        });
-      }
-
-      function updateChart(readings) {
-        if (sensorChart === null) {
-          createChart(readings);
-          return;
-        }
-
-        sensorChart.data.labels = readings.map((row) => row.time);
-        sensorChart.data.datasets[0].data = readings.map(
-          (row) => row.temperature,
-        );
-        sensorChart.data.datasets[1].data = readings.map((row) => row.humidity);
-
-        sensorChart.update();
-      }
-
-      async function refreshPageData() {
-        try {
-          const [current, readings] = await Promise.all([
-            fetchJson("/health"),
-            fetchJson("/api/readings"),
-          ]);
-
-          updateCurrentValues(current);
-          updateChart(readings);
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      refreshPageData();
-      setInterval(refreshPageData, 60 * 1000);
-    </script>
+      <section aria-labelledby="historyTitle">
+        <div class="section-heading">
+          <h2 id="historyTitle">温湿度の推移</h2>
+          <p>時刻は日本標準時（JST）</p>
+        </div>
+        <div class="button-group range-controls" role="group" aria-label="表示期間">
+          <button type="button" data-range="1h">1時間</button>
+          <button type="button" data-range="6h">6時間</button>
+          <button type="button" data-range="24h">24時間</button>
+          <button type="button" data-range="7d">7日間</button>
+        </div>
+        <div class="chart-section temperature">
+          <h3>気温 <span class="muted">℃</span></h3>
+          <div class="chart-area"><canvas id="temperatureChart" role="img" aria-label="気温の時間別推移"></canvas></div>
+        </div>
+        <div class="chart-section humidity">
+          <h3>湿度 <span class="muted">%</span></h3>
+          <div class="chart-area"><canvas id="humidityChart" role="img" aria-label="湿度の時間別推移"></canvas></div>
+        </div>
+        <p class="chart-message" id="chartMessage" role="status" hidden></p>
+      </section>
+      <noscript><p>グラフを表示するには JavaScript を有効にしてください．</p></noscript>
+    </main>
   </body>
 </html>

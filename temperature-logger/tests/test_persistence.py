@@ -68,6 +68,7 @@ class PersistenceTests(TempDatabaseTest):
         )
         self.assertEqual(len(storage.pending(self.db_path)), 0)
         self.assertTrue(storage.validate_daily_stats(self.db_path)["ok"])
+        self.assertTrue(storage.validate_hourly_stats(self.db_path)["ok"])
         with self.assertRaises(FileExistsError):
             import_files(paths, self.db_path, ZoneInfo("Asia/Tokyo"))
 
@@ -182,6 +183,45 @@ class ApiTests(TempDatabaseTest):
         self.assertIsNone(data["buckets"][2]["temperature_avg"])
         self.assertIsNone(data["buckets"][2]["humidity_max"])
         self.assertEqual(data["buckets"][1]["humidity_min"], 50)
+
+    def test_hourly_statistics_partial_range_and_missing_hour(self):
+        for when, temperature, humidity in (
+            ("2024-02-29T00:05:00+09:00", 20, 50),
+            ("2024-02-29T00:35:00+09:00", 22, 60),
+            ("2024-02-29T02:00:00+09:00", 24, 70),
+        ):
+            storage.insert(self.db_path, milliseconds(when), temperature, humidity)
+        response = self.client.get(
+            "/api/stats",
+            query_string={
+                "group_by": "hour",
+                "from": "2024-02-29T00:20:00+09:00",
+                "to": "2024-02-29T03:00:00+09:00",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.json), {"start_ms", "end_ms", "summary", "group_by", "buckets"}
+        )
+        self.assertEqual(response.json["summary"]["count"], 2)
+        self.assertEqual(response.json["summary"]["temperature_avg"], 23)
+        self.assertEqual([row["count"] for row in response.json["buckets"]], [1, 0, 1])
+        self.assertIsNone(response.json["buckets"][1]["temperature_avg"])
+        self.assertEqual(
+            response.json["buckets"][0]["bucket_start_ms"],
+            milliseconds("2024-02-29T00:00:00+09:00"),
+        )
+        self.assertEqual(
+            self.client.get(
+                "/api/stats",
+                query_string={
+                    "interval": "hour",
+                    "start_ms": milliseconds("2024-02-29T00:20:00+09:00"),
+                    "end_ms": milliseconds("2024-02-29T03:00:00+09:00"),
+                },
+            ).json["buckets"][0]["count"],
+            1,
+        )
 
     def test_weekly_statistics_start_monday_across_year(self):
         storage.insert(self.db_path, milliseconds("2023-12-31T23:59:00+09:00"), 12, 40)
