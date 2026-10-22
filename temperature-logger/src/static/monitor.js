@@ -545,6 +545,8 @@ async function refresh() {
 }
 function chooseRange(range) {
   selectedRange = range;
+  selectionPinned = false;
+  requestedTime = null;
   document.querySelectorAll("[data-range]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.range === range));
   });
@@ -555,6 +557,12 @@ function chooseRange(range) {
 }
 document.querySelectorAll("[data-range]").forEach((button) => {
   button.addEventListener("click", () => chooseRange(button.dataset.range));
+});
+document.getElementById("timeScrubber").addEventListener("input", (event) => {
+  queueSelection(Number(event.currentTarget.value), true);
+});
+window.addEventListener("resize", () => {
+  if (activeEnd > activeStart) renderTimelineTicks(activeStart, activeEnd);
 });
 chooseRange(selectedRange);
 setInterval(refresh, 60_000);
