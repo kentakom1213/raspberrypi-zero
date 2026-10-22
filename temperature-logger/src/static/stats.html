@@ -1,326 +1,193 @@
 <!doctype html>
 <html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <title>統計・履歴 | 温湿度モニター</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="/static/app.css" />
-  </head>
-  <body>
-    <main class="stats-page" id="page">
-      <header class="site-header">
-        <a class="brand" href="/">温湿度モニター</a>
-        <nav class="nav" aria-label="ページ">
-          <a href="/">現在の温湿度</a>
-          <a href="/stats" aria-current="page">統計・履歴</a>
-        </nav>
-      </header>
+<head>
+  <meta charset="utf-8" />
+  <title>統計・履歴 | 温湿度モニター</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/static/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+  <script type="module" src="/static/stats.js"></script>
+</head>
+<body>
+  <main class="stats-page stats-dashboard" id="page">
+    <header class="site-header">
+      <a class="brand" href="/">温湿度モニター</a>
+      <nav class="nav" aria-label="ページ">
+        <a href="/">現在の温湿度</a>
+        <a href="/stats" aria-current="page">統計・履歴</a>
+      </nav>
+    </header>
+    <div class="stats-title">
       <h1>統計・履歴</h1>
-      <div class="controls">
+      <span>過去の測定結果</span>
+    </div>
+    <nav class="stats-tabs" aria-label="統計の表示" role="tablist">
+      <button type="button" role="tab" id="tab-calendar" data-view="calendar" aria-controls="view-calendar">カレンダー</button>
+      <button type="button" role="tab" id="tab-trend" data-view="trend" aria-controls="view-trend">推移</button>
+      <button type="button" role="tab" id="tab-compare" data-view="compare" aria-controls="view-compare">比較</button>
+    </nav>
+    <p class="stats-error" id="statsError" role="alert" hidden></p>
+    <div id="statsLoading" class="stats-loading" role="status" hidden>読み込み中…</div>
+
+    <section id="view-calendar" role="tabpanel" aria-labelledby="tab-calendar">
+      <div class="stats-toolbar">
         <div class="control-set">
-          <span class="control-label">集計単位</span>
-          <div class="button-group" aria-label="集計単位">
-            <button type="button" data-group="day">日別</button>
-            <button type="button" data-group="week">週別</button>
-            <button type="button" data-group="month">月別</button>
+          <span class="control-label">表示</span>
+          <div class="button-group" aria-label="カレンダー表示">
+            <button data-calendar-mode="month" type="button">月間</button>
+            <button data-calendar-mode="year" type="button">年間</button>
+          </div>
+        </div>
+        <div class="control-set stats-metric-controls">
+          <span class="control-label">色分け</span>
+          <select id="calendarMetric" aria-label="カレンダーの色分け">
+            <option value="temperature">平均気温</option>
+            <option value="humidity">平均湿度</option>
+            <option value="temperature_max">最高気温</option>
+            <option value="temperature_min">最低気温</option>
+            <option value="discomfort">不快指数（参考）</option>
+            <option value="amplitude">日内変動幅</option>
+          </select>
+        </div>
+        <div class="stats-nav">
+          <button type="button" id="calPrevious" aria-label="前の月または年">‹</button>
+          <strong id="calendarTitle"></strong>
+          <button type="button" id="calNext" aria-label="次の月または年">›</button>
+        </div>
+      </div>
+      <div class="calendar-overview">
+        <section class="stats-panel calendar-card" aria-labelledby="calendarHeading">
+          <h2 id="calendarHeading" class="sr-only">測定日カレンダー</h2>
+          <div id="monthCalendar">
+            <div class="calendar-weekdays" aria-hidden="true">
+              <span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span><span>日</span>
+            </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+          </div>
+          <div class="annual-heatmap" id="annualHeatmap" hidden></div>
+          <div class="calendar-bottom">
+            <span id="calendarLegendLabel">平均気温</span>
+            <div class="heat-legend">
+              <span id="heatMin">12℃</span>
+              <div class="heat-ramp" aria-hidden="true"></div>
+              <span id="heatMax">35℃</span>
+            </div>
+            <span class="coverage-hint">斜線：測定なし／●：充足率80%未満</span>
+          </div>
+        </section>
+        <section class="stats-panel day-card" aria-labelledby="dayTitle">
+          <div class="card-heading">
+            <h2 id="dayTitle">日付を選択</h2>
+            <div class="stats-nav">
+              <button type="button" id="dayPrevious" aria-label="前日">‹</button>
+              <button type="button" id="dayNext" aria-label="翌日">›</button>
+            </div>
+          </div>
+          <div id="dayEmpty" class="stats-empty" hidden>この日の測定データはありません．</div>
+          <div class="day-kpis" id="dayKpis">
+            <div class="kpi kpi-temperature"><span>平均気温</span><strong id="dayTemperature">—</strong></div>
+            <div class="kpi kpi-humidity"><span>平均湿度</span><strong id="dayHumidity">—</strong></div>
+            <div class="kpi"><span>最高気温</span><strong id="dayMax">—</strong></div>
+            <div class="kpi"><span>最低気温</span><strong id="dayMin">—</strong></div>
+            <div class="kpi"><span>不快指数（参考）</span><strong id="dayDI">—</strong></div>
+            <div class="kpi"><span>測定件数／充足率</span><strong id="dayCoverage">—</strong></div>
+          </div>
+          <p class="stats-note">不快指数は日平均の気温・湿度から計算した参考値です．充足率は1分間隔を基準にしています．</p>
+        </section>
+      </div>
+      <div class="daily-details">
+        <section class="stats-panel detail-chart" aria-labelledby="detailTitle">
+          <div class="card-heading"><h2 id="detailTitle">選択日の時間別推移</h2><span class="stats-note">JST · 時間平均</span></div>
+          <div class="stats-chart-area"><canvas id="dayChart" role="img" aria-label="選択日の気温と湿度の時間別推移"></canvas></div>
+        </section>
+        <section class="stats-panel detail-phase" aria-labelledby="detailPhaseTitle">
+          <div class="card-heading"><h2 id="detailPhaseTitle">気温 × 湿度</h2><span class="stats-note">時間順の軌跡</span></div>
+          <div class="stats-chart-area"><canvas id="dayPhase" role="img" aria-label="選択日の気温と湿度の対応"></canvas></div>
+        </section>
+      </div>
+      <details class="stats-panel table-panel" id="calendarTable">
+        <summary>日別集計表 <span>表示／非表示</span></summary>
+        <div class="table-scroll"><table><thead>
+          <tr><th>日付</th><th>平均気温</th><th>最高</th><th>最低</th><th>平均湿度</th><th>測定件数</th><th>充足率</th></tr>
+        </thead><tbody id="calendarRows"></tbody></table></div>
+      </details>
+    </section>
+
+    <section id="view-trend" role="tabpanel" aria-labelledby="tab-trend" hidden>
+      <div class="stats-toolbar">
+        <div class="control-set"><span class="control-label">指標</span>
+          <div class="button-group">
+            <button type="button" data-trend-metric="temperature">気温</button>
+            <button type="button" data-trend-metric="humidity">湿度</button>
+          </div>
+        </div>
+        <div class="control-set"><span class="control-label">集計単位</span>
+          <div class="button-group">
+            <button type="button" data-trend-group="day">日別</button>
+            <button type="button" data-trend-group="week">週別</button>
+            <button type="button" data-trend-group="month">月別</button>
+          </div>
+        </div>
+        <div class="stats-nav">
+          <button type="button" id="trendPrevious" aria-label="前の期間">‹</button>
+          <strong id="trendPeriod"></strong>
+          <button type="button" id="trendNext" aria-label="次の期間">›</button>
+        </div>
+      </div>
+      <div class="stats-kpis" id="trendKpis"></div>
+      <section class="stats-panel trend-main">
+        <div class="card-heading">
+          <h2 id="trendHeading">気温の推移</h2>
+          <span class="stats-note">平均と最高・最低の範囲，前期間の平均（点線）</span>
+        </div>
+        <div class="stats-chart-area"><canvas id="trendChart" role="img" aria-label="日・週・月別の統計グラフ"></canvas></div>
+      </section>
+      <details class="stats-panel table-panel" id="trendTable">
+        <summary>集計表 <span>表示／非表示</span></summary>
+        <div class="table-scroll"><table><thead>
+          <tr><th>期間</th><th>平均</th><th>最高</th><th>最低</th><th>測定件数</th></tr>
+        </thead><tbody id="trendRows"></tbody></table></div>
+      </details>
+    </section>
+
+    <section id="view-compare" role="tabpanel" aria-labelledby="tab-compare" hidden>
+      <div class="stats-toolbar">
+        <div class="control-set">
+          <span class="control-label">比較先</span>
+          <div class="button-group">
+            <button type="button" data-basis="previous">前の期間</button>
+            <button type="button" data-basis="year">前年同時期</button>
           </div>
         </div>
         <div class="control-set">
-          <span class="control-label">指標</span>
-          <div class="button-group" aria-label="指標">
-            <button type="button" data-metric="temperature">気温</button>
-            <button type="button" data-metric="humidity">湿度</button>
+          <span class="control-label">期間</span>
+          <div class="button-group">
+            <button type="button" data-compare-days="7">7日</button>
+            <button type="button" data-compare-days="30">30日</button>
+            <button type="button" data-compare-days="90">90日</button>
           </div>
         </div>
+        <span class="stats-compare-period" id="comparePeriod"></span>
       </div>
-      <div class="period-controls">
-        <span id="rangeLabel"></span>
-        <div class="button-group">
-          <button type="button" id="previous">前の期間</button>
-          <button type="button" id="next">次の期間</button>
-        </div>
+      <div class="stats-kpis" id="compareKpis"></div>
+      <div class="comparison-plots">
+        <section class="stats-panel">
+          <div class="card-heading"><h2>平均気温の比較</h2><span class="stats-note">オレンジ：今回／点線：比較期間</span></div>
+          <div class="stats-chart-area"><canvas id="compareTemperature" role="img" aria-label="平均気温の期間比較"></canvas></div>
+        </section>
+        <section class="stats-panel">
+          <div class="card-heading"><h2>平均湿度の比較</h2><span class="stats-note">青：今回／点線：比較期間</span></div>
+          <div class="stats-chart-area"><canvas id="compareHumidity" role="img" aria-label="平均湿度の期間比較"></canvas></div>
+        </section>
       </div>
-      <div class="summary" aria-label="表示期間の統計">
-        <div><div class="label">平均</div><div class="number" id="average">—</div></div>
-        <div><div class="label">最高</div><div class="number" id="maximum">—</div></div>
-        <div><div class="label">最低</div><div class="number" id="minimum">—</div></div>
-        <div><div class="label">測定件数</div><div class="number" id="count">0</div></div>
-      </div>
-      <h2 id="chartTitle">気温の推移</h2>
-      <div class="chart-area" id="chartArea">
-        <canvas id="statsChart" role="img" aria-label="平均・最高・最低の推移"></canvas>
-      </div>
-      <p class="message" id="message" role="status" hidden></p>
-      <h2>集計結果</h2>
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th scope="col">期間</th><th scope="col">平均</th><th scope="col">最高</th><th scope="col">最低</th><th scope="col">測定件数</th></tr></thead>
-          <tbody id="results"></tbody>
-        </table>
-      </div>
-    </main>
-    <script>
-      const groupSizes = { day: 30, week: 26, month: 12 };
-      const metricNames = { temperature: "気温", humidity: "湿度" };
-      const jstOffsetMs = 9 * 60 * 60 * 1000;
-      let state;
-      let chart = null;
-      let requestNumber = 0;
-
-      function isoDate(date) {
-        return date.toISOString().slice(0, 10);
-      }
-
-      function jstDate(ms) {
-        const local = new Date(ms + jstOffsetMs);
-        return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()));
-      }
-
-      function periodStart(date, group) {
-        const result = new Date(date.getTime());
-        if (group === "week") {
-          result.setUTCDate(result.getUTCDate() - (result.getUTCDay() + 6) % 7);
-        } else if (group === "month") {
-          result.setUTCDate(1);
-        }
-        return result;
-      }
-
-      function move(date, group, amount) {
-        const result = new Date(date.getTime());
-        if (group === "month") {
-          result.setUTCMonth(result.getUTCMonth() + amount);
-        } else {
-          result.setUTCDate(result.getUTCDate() + amount * (group === "week" ? 7 : 1));
-        }
-        return result;
-      }
-
-      function currentWindowStart(group) {
-        return move(periodStart(jstDate(Date.now()), group), group, 1 - groupSizes[group]);
-      }
-
-      function parseDate(value) {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return null;
-        const date = new Date(`${value}T00:00:00Z`);
-        return !Number.isNaN(date.getTime()) && isoDate(date) === value ? date : null;
-      }
-
-      function readState() {
-        const params = new URLSearchParams(location.search);
-        const group = Object.hasOwn(groupSizes, params.get("group_by")) ? params.get("group_by") : "day";
-        const metric = Object.hasOwn(metricNames, params.get("metric")) ? params.get("metric") : "temperature";
-        const start = parseDate(params.get("start"));
-        const first = start ? periodStart(start, group) : currentWindowStart(group);
-        const current = currentWindowStart(group);
-        return {
-          group,
-          metric,
-          start: first < new Date(Date.UTC(1970, 0, 2)) || first > current ? current : first,
-        };
-      }
-
-      function urlFor(value) {
-        const params = new URLSearchParams({ group_by: value.group, metric: value.metric, start: isoDate(value.start) });
-        return `/stats?${params.toString()}`;
-      }
-
-      function label(date, group) {
-        const short = (value) => `${value.getUTCFullYear()}/${value.getUTCMonth() + 1}/${value.getUTCDate()}`;
-        if (group === "day") return short(date);
-        if (group === "week") return `${short(date)}〜${short(move(date, "day", 6))}`;
-        return `${date.getUTCFullYear()}年${date.getUTCMonth() + 1}月`;
-      }
-
-      function bucketDate(ms) {
-        return jstDate(ms);
-      }
-
-      function updateControls() {
-        document.querySelectorAll("[data-group]").forEach((button) => {
-          button.setAttribute("aria-pressed", button.dataset.group === state.group);
-        });
-        document.querySelectorAll("[data-metric]").forEach((button) => {
-          button.setAttribute("aria-pressed", button.dataset.metric === state.metric);
-        });
-        const last = move(state.start, state.group, groupSizes[state.group] - 1);
-        document.getElementById("rangeLabel").textContent = `${label(state.start, state.group)} 〜 ${label(last, state.group)}（JST）`;
-        document.getElementById("next").disabled = state.start >= currentWindowStart(state.group);
-        document.getElementById("page").style.setProperty("--metric-color", state.metric === "temperature" ? "var(--temperature)" : "var(--humidity)");
-        document.getElementById("chartTitle").textContent = `${metricNames[state.metric]}の推移`;
-      }
-
-      function setMessage(text, error = false) {
-        const element = document.getElementById("message");
-        element.textContent = text;
-        element.classList.toggle("error", error);
-        element.hidden = !text;
-      }
-
-      function formatValue(value, unit) {
-        return value == null ? "—" : `${Number(value).toFixed(1)} ${unit}`;
-      }
-
-      function renderSummary(summary) {
-        const metric = state.metric;
-        const unit = metric === "temperature" ? "℃" : "%";
-        document.getElementById("average").textContent = formatValue(summary[`${metric}_avg`], unit);
-        document.getElementById("maximum").textContent = formatValue(summary[`${metric}_max`], unit);
-        document.getElementById("minimum").textContent = formatValue(summary[`${metric}_min`], unit);
-        document.getElementById("count").textContent = summary.count.toLocaleString("ja-JP");
-      }
-
-      function renderTable(buckets) {
-        const body = document.getElementById("results");
-        body.replaceChildren();
-        const now = Date.now();
-        const unit = state.metric === "temperature" ? "℃" : "%";
-        for (const bucket of [...buckets].reverse()) {
-          const start = bucketDate(bucket.bucket_start_ms);
-          const end = move(start, state.group, 1).getTime() - jstOffsetMs;
-          const row = document.createElement("tr");
-          const period = document.createElement("td");
-          period.textContent = label(start, state.group);
-          if (bucket.bucket_start_ms <= now && now < end) {
-            const ongoing = document.createElement("span");
-            ongoing.className = "ongoing";
-            ongoing.textContent = "進行中";
-            period.append(ongoing);
-          }
-          row.append(period);
-          for (const suffix of ["avg", "max", "min"]) {
-            const cell = document.createElement("td");
-            cell.textContent = formatValue(bucket[`${state.metric}_${suffix}`], unit);
-            row.append(cell);
-          }
-          const count = document.createElement("td");
-          count.textContent = bucket.count.toLocaleString("ja-JP");
-          row.append(count);
-          body.append(row);
-        }
-      }
-
-      function renderChart(buckets) {
-        if (chart) {
-          chart.destroy();
-          chart = null;
-        }
-        const hasData = buckets.some((bucket) => bucket.count > 0);
-        document.getElementById("chartArea").hidden = !hasData;
-        if (!hasData) {
-          setMessage("この期間には測定データがありません．");
-          return;
-        }
-        if (typeof Chart === "undefined") {
-          document.getElementById("chartArea").hidden = true;
-          setMessage("グラフを表示できません．集計結果は表で確認できます．", true);
-          return;
-        }
-        setMessage("");
-        const metric = state.metric;
-        const unit = metric === "temperature" ? "℃" : "%";
-        const color = metric === "temperature" ? "#c2410c" : "#2563eb";
-        const fill = metric === "temperature" ? "rgba(194, 65, 12, 0.12)" : "rgba(37, 99, 235, 0.12)";
-        const labels = buckets.map((bucket) => label(bucketDate(bucket.bucket_start_ms), state.group));
-        const values = (suffix) => buckets.map((bucket) => bucket[`${metric}_${suffix}`]);
-        chart = new Chart(document.getElementById("statsChart"), {
-          type: "line",
-          data: {
-            labels,
-            datasets: [
-              { label: "最高", data: values("max"), borderColor: color, borderWidth: 1, pointRadius: 0, spanGaps: false, fill: { target: 1, above: fill, below: fill } },
-              { label: "最低", data: values("min"), borderColor: color, borderWidth: 1, pointRadius: 0, spanGaps: false },
-              { label: "平均", data: values("avg"), borderColor: color, borderWidth: 3, pointRadius: 2, spanGaps: false },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: {
-              tooltip: {
-                callbacks: {
-                  label: (item) => `${item.dataset.label}: ${item.parsed.y.toFixed(1)} ${unit}`,
-                  footer: (items) => `測定件数: ${buckets[items[0].dataIndex].count.toLocaleString("ja-JP")}`,
-                },
-              },
-            },
-            scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0 } }, y: { title: { display: true, text: `${metricNames[metric]} (${unit})` } } },
-          },
-        });
-      }
-
-      function clearResults() {
-        if (chart) {
-          chart.destroy();
-          chart = null;
-        }
-        document.getElementById("chartArea").hidden = true;
-        document.getElementById("results").replaceChildren();
-        for (const id of ["average", "maximum", "minimum", "count"]) {
-          document.getElementById(id).textContent = "—";
-        }
-      }
-
-      async function load() {
-        const request = ++requestNumber;
-        updateControls();
-        const end = move(state.start, state.group, groupSizes[state.group]);
-        const params = new URLSearchParams({
-          group_by: state.group,
-          from: `${isoDate(state.start)}T00:00:00+09:00`,
-          to: `${isoDate(end)}T00:00:00+09:00`,
-        });
-        try {
-          const response = await fetch(`/api/stats?${params.toString()}`);
-          if (!response.ok) throw new Error("集計データを取得できませんでした．");
-          const data = await response.json();
-          if (request !== requestNumber) return;
-          renderSummary(data.summary);
-          renderTable(data.buckets);
-          renderChart(data.buckets);
-        } catch (error) {
-          if (request === requestNumber) {
-            clearResults();
-            setMessage(error.message, true);
-          }
-        }
-      }
-
-      function navigate(next) {
-        state = next;
-        history.pushState(null, "", urlFor(state));
-        load();
-      }
-
-      document.querySelectorAll("[data-group]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const group = button.dataset.group;
-          if (group !== state.group) navigate({ group, metric: state.metric, start: currentWindowStart(group) });
-        });
-      });
-      document.querySelectorAll("[data-metric]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const metric = button.dataset.metric;
-          if (metric !== state.metric) navigate({ ...state, metric });
-        });
-      });
-      document.getElementById("previous").addEventListener("click", () => {
-        navigate({ ...state, start: move(state.start, state.group, -groupSizes[state.group]) });
-      });
-      document.getElementById("next").addEventListener("click", () => {
-        const start = move(state.start, state.group, groupSizes[state.group]);
-        navigate({ ...state, start: start > currentWindowStart(state.group) ? currentWindowStart(state.group) : start });
-      });
-      window.addEventListener("popstate", () => {
-        state = readState();
-        load();
-      });
-      state = readState();
-      history.replaceState(null, "", urlFor(state));
-      load();
-    </script>
-  </body>
+      <section class="stats-panel compare-summary">
+        <h2>期間の内訳</h2>
+        <div class="table-scroll"><table><thead>
+          <tr><th>期間</th><th>平均気温</th><th>平均湿度</th><th>最高気温</th><th>最低気温</th><th>測定件数</th></tr>
+        </thead><tbody id="comparisonRows"></tbody></table></div>
+        <p class="stats-note" id="compareNote">測定データのない期間は比較値を表示しません．</p>
+      </section>
+    </section>
+  </main>
+</body>
 </html>
