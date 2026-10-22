@@ -17,14 +17,14 @@ function fail(message, status) {
 }
 
 function numeric(value, label) {
-  if (!/^\\d{1,16}$/.test(value ?? "")) throw new Error(`${label} は非負整数で指定してください`);
+  if (!/^\d{1,16}$/.test(value ?? "")) throw new Error(`${label} は非負整数で指定してください`);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed)) throw new Error(`${label} が大きすぎます`);
   return parsed;
 }
 
 function dateBound(value, label) {
-  if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(value ?? "")) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value ?? "")) {
     throw new Error(`${label} はタイムゾーン付き ISO 8601 で指定してください`);
   }
   const ms = Date.parse(value);
