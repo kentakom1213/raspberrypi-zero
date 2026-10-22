@@ -42,7 +42,7 @@ test("normalizes minute boundaries for cacheable readings", () => {
 });
 test("rejects heavy queries, duplicates, and arbitrary parameters", () => {
   for (const path of [
-    "/api/readings?limit=10000",
+    "/api/readings?limit=10001",
     "/api/readings?limit=1&limit=2",
     "/api/readings?start_ms=1&end_ms=999999999999",
     "/api/stats",
@@ -52,6 +52,10 @@ test("rejects heavy queries, duplicates, and arbitrary parameters", () => {
   ]) {
     assert.throws(() => normalizedApiUrl(url(path)), path);
   }
+});
+test("accepts the existing Flask monitor limit without fetching more than 2000 rows", () => {
+  const result = normalizedApiUrl(url("/api/readings?start_ms=1800000000250&end_ms=1800003600789&limit=10000"));
+  assert.equal(result.searchParams.get("limit"), "2000");
 });
 test("stats preserves calendar ISO dates", () => {
   const result = normalizedApiUrl(url("/api/stats?group_by=month&from=2026-01-01T00%3A00%3A00%2B09%3A00&to=2026-10-01T00%3A00%3A00%2B09%3A00"));

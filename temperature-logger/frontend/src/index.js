@@ -74,8 +74,9 @@ export function normalizedApiUrl(original) {
       params.set("end_ms", String(end));
     }
     const limit = params.has("limit") ? numeric(params.get("limit"), "limit") : (ranged ? 2000 : 300);
-    if (limit < 1 || limit > 2000) throw new Error("limit は 1〜2000 にしてください");
-    params.set("limit", String(limit));
+    if (limit < 1 || limit > 10000) throw new Error("limit は 1〜10000 にしてください");
+    // Flask UI asks for 10000, but at most 2000 results should reach a public visitor.
+    params.set("limit", String(Math.min(limit, 2000)));
   } else {
     rejectUnexpected(params, ["start_ms", "end_ms", "from", "to", "group_by", "interval"]);
     if (params.has("group_by") && params.has("interval")) {
