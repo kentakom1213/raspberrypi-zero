@@ -17,6 +17,9 @@ python3 import_csv.py --timezone Asia/Tokyo --output /path/to/readings-import.db
 
 ## API
 
+Raspberry Pi は測定・Ambient 送信と Flask API 専用です．Cloudflare Tunnel が同じ Pi 上で動作し，Workers VPC Service の接続先は `127.0.0.1:8000` とします．従来の Flask HTTP 公開ホスト名が残っていれば Cloudflare Dashboard で削除してください（SSH の Access/Tunnel は維持）．公開画面は `temp.pwll.dev` の Workers が配信します．Pi に変更をデプロイする際は `temperature-logger.service` の再起動後に `/health` と Workers 経由の画面を確認してください．
+
+
 既存の `GET /health` は `temperature`，`humidity`，`sent_at`，`last_error` を返します．`sent_at` は互換性のため名前を維持し，最終測定時刻を表します．Web UI もこれを最終測定として表示します．
 
 `GET /api/readings` は従来どおり，直近 `chart.max_points` 件の `time`，`temperature`，`humidity` の配列を時刻順に返します．期間検索では `start_ms` 以上，`end_ms` 未満の Unix ミリ秒を指定します．返却行には `measured_at_ms` も含みます．`limit` の既定値は 1,000，最大は 10,000 件です．
@@ -34,7 +37,7 @@ GET /api/stats?start_ms=1780239600000&end_ms=1780326000000&interval=hour
 GET /api/stats?group_by=week&from=2026-10-05T00:00:00%2B09:00&to=2026-11-02T00:00:00%2B09:00
 ```
 
-`/` は現在の温湿度，`/stats` は日別（直近30日）・週別（直近26週）・月別（直近12か月）の統計ページです．いずれも JST の暦を基準とし，進行中の期間を表示します．統計ページの集計単位・指標・開始日を URL の `group_by`・`metric`・`start` に保持します．
+Cloudflare Workers Static Assets が `/` の現在の温湿度，`/stats` の日別（直近30日）・週別（直近26週）・月別（直近12か月）の統計ページを配信します．Raspberry Pi の Flask は API 専用で，`/`，`/stats`，`/static/*` を配信せず，ループバックの `127.0.0.1:8000` のみで待ち受けます．静的ソース `src/static/` は Workers ビルドが参照するため削除しません．いずれも JST の暦を基準とし，進行中の期間を表示します．統計ページの集計単位・指標・開始日を URL の `group_by`・`metric`・`start` に保持します．
 
 トップページの独立した気温・湿度グラフは `1h`・`6h`・`24h`・`7d` を切り替えられます．最初の3期間は `/api/readings`，7日間は `/api/stats?interval=hour` の時間別平均を使います．両グラフは Unix ミリ秒の数値軸を共有し，JST で表示します．測定間隔が5分以上，または時間別データが90分以上空いた箇所には欠測を入れます．表示期間は URL の `range` に保持し，60秒ごとに再取得します．最終測定から3分以上経過した値は停止の可能性を明示します．
 
