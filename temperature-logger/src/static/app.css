@@ -594,3 +594,5 @@ th { color: var(--muted); }
 .stats-dashboard .annual-day{height:14px}
 .stats-dashboard .annual-axis,.stats-dashboard .annual-month{grid-template-columns:25px repeat(31,minmax(0,1fr));gap:1px}
 }
+
+.stats-dashboard .trend-secondary{margin-top:14px}
