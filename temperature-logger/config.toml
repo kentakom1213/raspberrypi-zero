@@ -7,7 +7,7 @@ retry_delay_seconds = 3.0
 interval_seconds = 60
 
 [server]
-host = "0.0.0.0"
+host = "127.0.0.1"
 port = 8000
 
 [chart]
