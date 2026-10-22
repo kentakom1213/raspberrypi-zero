@@ -558,8 +558,22 @@ function chooseRange(range) {
 document.querySelectorAll("[data-range]").forEach((button) => {
   button.addEventListener("click", () => chooseRange(button.dataset.range));
 });
-document.getElementById("timeScrubber").addEventListener("input", (event) => {
+const timeScrubber = document.getElementById("timeScrubber");
+timeScrubber.addEventListener("input", (event) => {
   queueSelection(Number(event.currentTarget.value), true);
+});
+timeScrubber.addEventListener("keydown", (event) => {
+  if (!activeHistory.length) return;
+  const delta = event.key === "ArrowRight" || event.key === "ArrowUp" ? 1 :
+    event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : 0;
+  const target = event.key === "Home" ? 0 :
+    event.key === "End" ? activeHistory.length - 1 :
+      delta ? Math.max(0, Math.min(activeHistory.length - 1, selectedIndex + delta)) : null;
+  if (target == null) return;
+  event.preventDefault();
+  if (selectionFrame != null) cancelAnimationFrame(selectionFrame);
+  selectionFrame = null;
+  applySelection(activeHistory[target].time, true);
 });
 window.addEventListener("resize", () => {
   if (activeEnd > activeStart) renderTimelineTicks(activeStart, activeEnd);
