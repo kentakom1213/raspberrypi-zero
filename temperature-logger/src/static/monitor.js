@@ -1,6 +1,7 @@
 import {
   discomfortIndex, comfortColor, humidityAtIndex,
   normalizeHistory, timelinePoints, phasePoints,
+  phaseBounds, nearestReadingIndex, comfortBands,
 } from "/static/comfort.mjs";
 
 const HOUR = 60 * 60 * 1000;
@@ -30,6 +31,14 @@ let humidityChart = null;
 let phaseChart = null;
 let activeController = null;
 let requestNumber = 0;
+let activeHistory = [];
+let activeGapMs = 5 * 60_000;
+let activeStart = 0;
+let activeEnd = 0;
+let selectedIndex = -1;
+let selectionPinned = false;
+let requestedTime = null;
+let selectionFrame = null;
 
 function setNotice(message) {
   const element = document.getElementById("notice");
@@ -110,66 +119,100 @@ function xAxis(start, end) {
 // This plugin draws genuine index-based iso-regions in the phase plane.
 // Time plots are shaded VERTICALLY by the simultaneous T/RH index;
 // horizontal stripes by temperature or RH alone would be misleading.
+// Cache the DI background: scrubbing the trajectory must not recompute
+// tens of thousands of temperature/humidity cells at every pointer move.
+function paintPhaseBackground(chart, area) {
+  const { x, y } = chart.scales;
+  const width = Math.ceil(area.right - area.left);
+  const height = Math.ceil(area.bottom - area.top);
+  if (width <= 0 || height <= 0) return;
+  const key = [width, height, x.min, x.max, y.min, y.max].join(":");
+  if (chart.$phaseBackground?.key !== key) {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    const step = 3;
+    for (let px = 0; px < width; px += step) {
+      for (let py = 0; py < height; py += step) {
+        const temperature = x.getValueForPixel(area.left + Math.min(px + 1.5, width));
+        const humidity = y.getValueForPixel(area.top + Math.min(py + 1.5, height));
+        ctx.fillStyle = comfortColor(discomfortIndex(temperature, humidity), 0.27);
+        ctx.fillRect(px, py, Math.min(step, width - px), Math.min(step, height - py));
+      }
+    }
+    ctx.lineWidth = 0.75;
+    ctx.strokeStyle = "rgba(80, 88, 96, .16)";
+    ctx.setLineDash([3, 4]);
+    for (const index of [65, 75, 80, 85]) {
+      ctx.beginPath();
+      let connected = false;
+      for (let px = 0; px < width; px += 2) {
+        const temperature = x.getValueForPixel(area.left + px);
+        const rh = humidityAtIndex(temperature, index);
+        if (rh == null || !Number.isFinite(rh) || rh < y.min || rh > y.max) {
+          connected = false;
+          continue;
+        }
+        const py = y.getPixelForValue(rh) - area.top;
+        if (connected) ctx.lineTo(px, py);
+        else ctx.moveTo(px, py);
+        connected = true;
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    chart.$phaseBackground = { key, canvas };
+  }
+  chart.ctx.drawImage(chart.$phaseBackground.canvas, area.left, area.top);
+}
+
 const comfortBackground = {
   id: "comfortBackground",
   beforeDatasetsDraw(chart) {
-    const { ctx, chartArea: area, scales } = chart;
-    const config = chart.$comfort;
+    const { ctx, chartArea: area, scales, $comfort: config } = chart;
     if (!area || !config) return;
     ctx.save();
     ctx.beginPath();
     ctx.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
     ctx.clip();
     if (config.mode === "time") {
-      const rows = config.readings;
-      const x = scales.x;
-      for (let i = 0; i < rows.length - 1; i++) {
-        const current = rows[i];
-        const next = rows[i + 1];
-        if (next.time - current.time >= config.gapMs) continue;
-        const a = Math.max(area.left, x.getPixelForValue(current.time));
-        const b = Math.min(area.right, x.getPixelForValue(next.time));
-        if (b > a) {
-          ctx.fillStyle = comfortColor(current.di, 0.43);
-          ctx.fillRect(a, area.top, b - a, area.bottom - area.top);
-        }
+      for (const band of config.bands || []) {
+        const a = Math.max(area.left, scales.x.getPixelForValue(band.start));
+        const b = Math.min(area.right, scales.x.getPixelForValue(band.end));
+        if (b <= a) continue;
+        ctx.fillStyle = comfortColor(band.di, 0.20);
+        ctx.fillRect(a, area.top, b - a, area.bottom - area.top);
       }
     } else if (config.mode === "phase") {
-      const x = scales.x;
-      const y = scales.y;
-      const step = 7;
-      for (let px = area.left; px < area.right; px += step) {
-        for (let py = area.top; py < area.bottom; py += step) {
-          const temperature = x.getValueForPixel(Math.min(px + step / 2, area.right));
-          const humidity = y.getValueForPixel(Math.min(py + step / 2, area.bottom));
-          ctx.fillStyle = comfortColor(discomfortIndex(temperature, humidity), 0.72);
-          ctx.fillRect(px, py, Math.min(step + .5, area.right - px),
-            Math.min(step + .5, area.bottom - py));
-        }
-      }
-      // Fine contour lines at index thresholds, curved in T/RH coordinates.
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(73,83,94,0.27)";
-      ctx.setLineDash([3, 4]);
-      for (const index of [65, 75, 80, 85]) {
-        ctx.beginPath();
-        let connected = false;
-        for (let px = area.left; px <= area.right + 1; px += 3) {
-          const t = x.getValueForPixel(px);
-          const rh = humidityAtIndex(t, index);
-          if (rh == null || !Number.isFinite(rh) || rh < y.min || rh > y.max) {
-            connected = false;
-            continue;
-          }
-          const py = y.getPixelForValue(rh);
-          if (!connected) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-          connected = true;
-        }
-        ctx.stroke();
-      }
-      ctx.setLineDash([]);
+      paintPhaseBackground(chart, area);
     }
+    ctx.restore();
+  },
+  afterDatasetsDraw(chart) {
+    if (chart.$comfort?.mode !== "time" || selectedIndex < 0) return;
+    const reading = activeHistory[selectedIndex];
+    const { ctx, chartArea: area, scales } = chart;
+    if (!reading || !area) return;
+    const px = scales.x.getPixelForValue(reading.time);
+    const py = scales.y.getPixelForValue(reading[chart.$field]);
+    if (!Number.isFinite(px) || !Number.isFinite(py) || px < area.left || px > area.right) return;
+    ctx.save();
+    ctx.strokeStyle = "rgba(57, 67, 80, .55)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(px, area.top);
+    ctx.lineTo(px, area.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = chart.$field === "temperature" ? colors.temperature : colors.humidity;
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(px, py, 4.5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   },
 };
@@ -188,7 +231,13 @@ function createTimeChart(canvas, label, metric, unit) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: { mode: "nearest", intersect: false },
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      onHover(_event, elements, source) {
+        const point = elements.find((item) => item.datasetIndex === 0);
+        if (!point) return;
+        const time = source.data.datasets[0].data[point.index]?.time;
+        if (Number.isFinite(time)) queueSelection(time, true);
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -210,7 +259,8 @@ function createTimeChart(canvas, label, metric, unit) {
       },
     },
   });
-  chart.$comfort = { mode: "time", readings: [], gapMs: 5 * 60_000 };
+  chart.$field = metric;
+  chart.$comfort = { mode: "time", bands: [] };
   return chart;
 }
 function mixTimeColor(ratio) {
@@ -220,16 +270,7 @@ function mixTimeColor(ratio) {
   const values = start.map((v, i) => Math.round(v + (end[i] - v) * t));
   return `rgb(${values.join(",")})`;
 }
-function phaseBounds(rows) {
-  if (!rows.length) return { tMin: 16, tMax: 32, hMin: 25, hMax: 85 };
-  const ts = rows.map((row) => row.temperature);
-  const hs = rows.map((row) => row.humidity);
-  const tMin = Math.min(16, Math.floor((Math.min(...ts) - 1) / 2) * 2);
-  const tMax = Math.max(32, Math.ceil((Math.max(...ts) + 1) / 2) * 2);
-  const hMin = Math.max(0, Math.min(25, Math.floor((Math.min(...hs) - 4) / 5) * 5));
-  const hMax = Math.min(100, Math.max(85, Math.ceil((Math.max(...hs) + 4) / 5) * 5));
-  return { tMin, tMax, hMin, hMax };
-}
+
 function createPhaseChart(canvas) {
   const chart = new Chart(canvas, {
     type: "line",
@@ -237,32 +278,62 @@ function createPhaseChart(canvas) {
     data: {
       datasets: [
         {
-          label: "変化の軌跡", data: [], parsing: false,
-          borderColor: colors.temperature, borderWidth: 2.5,
-          pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 9,
-          tension: 0.16, spanGaps: false,
+          label: "全期間", data: [], parsing: false,
+          borderColor: "rgba(88, 104, 115, .18)", borderWidth: 1.7,
+          pointRadius: 0, pointHitRadius: 12,
+          tension: 0, spanGaps: false,
+        },
+        {
+          label: "選択時刻まで", data: [], parsing: false,
+          borderColor: colors.temperature, borderWidth: 2.1,
+          pointRadius: 0, pointHitRadius: 12,
+          tension: 0, spanGaps: false,
           segment: {
             borderColor: (context) => {
-              const data = context.chart.data.datasets[0].data;
+              const data = context.chart.data.datasets[1].data;
               const { firstTime, lastTime } = context.chart.$comfort || {};
               const time = data[context.p1DataIndex]?.time;
               if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime) ||
                   !Number.isFinite(time)) return colors.temperature;
-              return mixTimeColor((time - firstTime) / Math.max(1, lastTime - firstTime));
+              const ratio = Math.max(0, Math.min(1,
+                (time - firstTime) / Math.max(1, lastTime - firstTime)));
+              const rgb = mixTimeColor(ratio);
+              // Older parts remain identifiable without overpowering newer ones.
+              return rgb.replace("rgb(", "rgba(").replace(")", `,${(0.3 + 0.7 * ratio).toFixed(2)})`);
             },
           },
         },
         {
+          label: "選択位置", data: [], parsing: false, showLine: false,
+          pointRadius: 6, pointHoverRadius: 8, pointHitRadius: 12,
+          pointBackgroundColor: colors.temperature, pointBorderColor: "#fff",
+          pointBorderWidth: 2.5,
+        },
+        {
           label: "最新", data: [], parsing: false, showLine: false,
-          pointRadius: 6, pointHoverRadius: 8,
-          pointBackgroundColor: colors.temperature,
-          pointBorderColor: "#fff", pointBorderWidth: 2.5,
+          pointRadius: 4, pointHoverRadius: 6, pointHitRadius: 10,
+          pointBackgroundColor: "#fff", pointBorderColor: colors.temperature,
+          pointBorderWidth: 1.6,
         },
       ],
     },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       interaction: { mode: "nearest", intersect: false },
+      onHover(event, items, source) {
+        if (!source.chartArea ||
+            event.x < source.chartArea.left || event.x > source.chartArea.right ||
+            event.y < source.chartArea.top || event.y > source.chartArea.bottom) return;
+        for (const item of items) {
+          const point = source.data.datasets[item.datasetIndex].data[item.index];
+          if (!point || !Number.isFinite(point.time) || point.y == null) continue;
+          const distance = Math.hypot(item.element.x - event.x, item.element.y - event.y);
+          if (distance < 25) {
+            queueSelection(point.time, true);
+            return;
+          }
+        }
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -272,23 +343,24 @@ function createPhaseChart(canvas) {
               const { x, y } = item.parsed;
               return `${x.toFixed(1)} ℃ ／ ${y.toFixed(1)} %`;
             },
-            afterLabel: (item) => `不快指数：${item.raw.di.toFixed(1)}`,
+            afterLabel: (item) => item.raw.di == null ? "" :
+              `不快指数：${item.raw.di.toFixed(1)}`,
           },
         },
       },
       scales: {
         x: {
-          type: "linear", min: 16, max: 32,
+          type: "linear", min: 20, max: 30,
           title: { display: true, text: "気温（℃）", font: { size: 11 } },
           ticks: { maxTicksLimit: 7, font: { size: 10 } },
-          grid: { color: "rgba(255,255,255,0.7)" },
+          grid: { color: "rgba(140,147,153,0.09)" },
           border: { display: false },
         },
         y: {
-          type: "linear", min: 25, max: 85,
+          type: "linear", min: 30, max: 70,
           title: { display: true, text: "湿度（%）", font: { size: 11 } },
           ticks: { maxTicksLimit: 7, font: { size: 10 } },
-          grid: { color: "rgba(255,255,255,0.7)" },
+          grid: { color: "rgba(140,147,153,0.09)" },
           border: { display: false },
         },
       },
@@ -297,6 +369,88 @@ function createPhaseChart(canvas) {
   chart.$comfort = { mode: "phase" };
   return chart;
 }
+
+function renderTimelineTicks(start, end) {
+  const element = document.getElementById("timelineTicks");
+  element.replaceChildren();
+  const span = end - start;
+  if (span <= 0) return;
+  const widthNarrow = window.innerWidth < 580;
+  const step = selectedRange === "7d" && widthNarrow ? 2 * DAY : timeTickStep();
+  const anchor = selectedRange === "7d" ? JST_OFFSET : 0;
+  const values = [start];
+  let current = Math.ceil((start + anchor) / step) * step - anchor;
+  while (current < end) {
+    if (current > start + step * 0.28 && current < end - step * 0.28) {
+      values.push(current);
+    }
+    current += step;
+  }
+  values.push(end);
+  for (let i = 0; i < values.length; i++) {
+    const time = values[i];
+    const label = document.createElement("span");
+    label.style.left = `${((time - start) / span * 100).toFixed(3)}%`;
+    label.textContent = selectedRange === "7d" ? dayTime.format(time) :
+      selectedRange === "24h" ? shortTime.format(time) : hourTime.format(time);
+    element.append(label);
+  }
+}
+
+function applySelection(time, pin = true, force = false) {
+  const index = nearestReadingIndex(activeHistory, Number(time));
+  const scrubber = document.getElementById("timeScrubber");
+  if (index < 0) {
+    selectedIndex = -1;
+    scrubber.disabled = true;
+    document.getElementById("selectedTime").textContent = "測定データなし";
+    document.getElementById("selectedMetrics").textContent = "—";
+    return;
+  }
+  const isNew = force || index !== selectedIndex;
+  selectedIndex = index;
+  const reading = activeHistory[index];
+  // Once user returns to the newest position, keep following live updates.
+  selectionPinned = Boolean(pin) && index < activeHistory.length - 1;
+  requestedTime = reading.time;
+  scrubber.disabled = false;
+  scrubber.value = String(reading.time);
+  const percent = (reading.time - activeStart) / Math.max(1, activeEnd - activeStart) * 100;
+  scrubber.style.setProperty("--scrub-progress", `${Math.max(0, Math.min(100, percent))}%`);
+  scrubber.setAttribute("aria-valuetext", fullTime.format(reading.time) + " JST");
+  document.getElementById("selectedTime").textContent = fullTime.format(reading.time) + " JST";
+  document.getElementById("selectedMetrics").textContent =
+    `${reading.temperature.toFixed(1)} ℃　${reading.humidity.toFixed(1)} %　DI ${reading.di.toFixed(1)}`;
+  document.getElementById("phaseInfo").textContent =
+    `最新 DI ${activeHistory.at(-1).di.toFixed(1)}`;
+
+  if (!isNew || !phaseChart) return;
+  phaseChart.data.datasets[1].data = phasePoints(
+    activeHistory.slice(0, index + 1), activeGapMs, selectedRange === "7d");
+  const point = {
+    x: reading.temperature, y: reading.humidity, time: reading.time, di: reading.di,
+  };
+  phaseChart.data.datasets[2].data = [point];
+  const latest = activeHistory.at(-1);
+  phaseChart.data.datasets[3].data = index === activeHistory.length - 1 ? [] :
+    [{ x: latest.temperature, y: latest.humidity, time: latest.time, di: latest.di }];
+  phaseChart.update("none");
+  temperatureChart?.draw();
+  humidityChart?.draw();
+}
+
+function queueSelection(time, pin = true) {
+  if (nearestReadingIndex(activeHistory, time) === selectedIndex) return;
+  pendingTime = time;
+  pendingPin = pin;
+  if (selectionFrame != null) return;
+  selectionFrame = requestAnimationFrame(() => {
+    selectionFrame = null;
+    applySelection(pendingTime, pendingPin);
+  });
+}
+let pendingTime = null;
+let pendingPin = true;
 
 function renderCharts(rows, start, end, hourly) {
   if (typeof Chart === "undefined") {
@@ -310,36 +464,51 @@ function renderCharts(rows, start, end, hourly) {
       document.getElementById("humidityChart"), "湿度", "humidity", "%");
     phaseChart = createPhaseChart(document.getElementById("phaseChart"));
   }
-
-  const history = normalizeHistory(rows, hourly);
-  const gapMs = hourly ? 90 * 60_000 : 5 * 60_000;
+  if (selectionFrame != null) {
+    cancelAnimationFrame(selectionFrame);
+    selectionFrame = null;
+  }
+  selectedIndex = -1;
+  activeHistory = normalizeHistory(rows, hourly);
+  activeStart = start;
+  activeEnd = end;
+  activeGapMs = hourly ? 90 * 60_000 : 5 * 60_000;
+  const bucketMs = hourly ? 3 * HOUR : 15 * 60_000;
+  const bands = comfortBands(activeHistory, bucketMs, activeGapMs);
   for (const [chart, field] of [
     [temperatureChart, "temperature"], [humidityChart, "humidity"],
   ]) {
-    chart.$comfort = { mode: "time", readings: history, gapMs };
-    chart.data.datasets[0].data = timelinePoints(history, field, gapMs);
+    chart.$comfort = { mode: "time", bands };
+    chart.data.datasets[0].data = timelinePoints(activeHistory, field, activeGapMs);
     chart.options.scales.x.min = start;
     chart.options.scales.x.max = end;
     chart.update("none");
   }
 
-  const phase = phasePoints(history, gapMs);
-  const bounds = phaseBounds(history);
+  const phase = phasePoints(activeHistory, activeGapMs, selectedRange === "7d");
+  const bounds = phaseBounds(activeHistory);
+  phaseChart.$comfort = {
+    mode: "phase",
+    firstTime: activeHistory[0]?.time,
+    lastTime: activeHistory.at(-1)?.time,
+  };
   phaseChart.data.datasets[0].data = phase;
-  phaseChart.$comfort = { mode: "phase", firstTime: history[0]?.time, lastTime: history.at(-1)?.time };
-  const latest = history.at(-1);
-  phaseChart.data.datasets[1].data = latest
-    ? [{ x: latest.temperature, y: latest.humidity, time: latest.time, di: latest.di }]
-    : [];
+  for (let i = 1; i < phaseChart.data.datasets.length; i++) {
+    phaseChart.data.datasets[i].data = [];
+  }
   phaseChart.options.scales.x.min = bounds.tMin;
   phaseChart.options.scales.x.max = bounds.tMax;
   phaseChart.options.scales.y.min = bounds.hMin;
   phaseChart.options.scales.y.max = bounds.hMax;
   phaseChart.update("none");
 
-  document.getElementById("phaseInfo").textContent = latest
-    ? `最新 DI ${latest.di.toFixed(1)}` : "データなし";
-  setChartMessage(history.length ? "" : "この期間の測定データはありません．");
+  const scrubber = document.getElementById("timeScrubber");
+  scrubber.min = String(start);
+  scrubber.max = String(end);
+  scrubber.step = "any";
+  renderTimelineTicks(start, end);
+  applySelection(selectionPinned ? requestedTime : activeHistory.at(-1)?.time, selectionPinned, true);
+  setChartMessage(activeHistory.length ? "" : "この期間の測定データはありません．");
 }
 
 async function fetchJson(url, signal) {
@@ -376,6 +545,8 @@ async function refresh() {
 }
 function chooseRange(range) {
   selectedRange = range;
+  selectionPinned = false;
+  requestedTime = null;
   document.querySelectorAll("[data-range]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.range === range));
   });
@@ -386,6 +557,26 @@ function chooseRange(range) {
 }
 document.querySelectorAll("[data-range]").forEach((button) => {
   button.addEventListener("click", () => chooseRange(button.dataset.range));
+});
+const timeScrubber = document.getElementById("timeScrubber");
+timeScrubber.addEventListener("input", (event) => {
+  queueSelection(Number(event.currentTarget.value), true);
+});
+timeScrubber.addEventListener("keydown", (event) => {
+  if (!activeHistory.length) return;
+  const delta = event.key === "ArrowRight" || event.key === "ArrowUp" ? 1 :
+    event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : 0;
+  const target = event.key === "Home" ? 0 :
+    event.key === "End" ? activeHistory.length - 1 :
+      delta ? Math.max(0, Math.min(activeHistory.length - 1, selectedIndex + delta)) : null;
+  if (target == null) return;
+  event.preventDefault();
+  if (selectionFrame != null) cancelAnimationFrame(selectionFrame);
+  selectionFrame = null;
+  applySelection(activeHistory[target].time, true);
+});
+window.addEventListener("resize", () => {
+  if (activeEnd > activeStart) renderTimelineTicks(activeStart, activeEnd);
 });
 chooseRange(selectedRange);
 setInterval(refresh, 60_000);

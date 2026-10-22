@@ -29,7 +29,10 @@ jobs:
         with:
           node-version: "22"
       - name: Check JavaScript syntax
-        run: node --check src/index.js
+        run: |
+          node --check src/index.js
+          node --check ../src/static/monitor.js
+          node --check ../src/static/comfort.mjs
       - name: Build and unit tests
         run: npm run check
       - name: Confirm output files
