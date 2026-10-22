@@ -370,6 +370,88 @@ function createPhaseChart(canvas) {
   return chart;
 }
 
+function renderTimelineTicks(start, end) {
+  const element = document.getElementById("timelineTicks");
+  element.replaceChildren();
+  const span = end - start;
+  if (span <= 0) return;
+  const widthNarrow = window.innerWidth < 580;
+  const step = selectedRange === "7d" && widthNarrow ? 2 * DAY : timeTickStep();
+  const anchor = selectedRange === "7d" ? JST_OFFSET : 0;
+  const values = [start];
+  let current = Math.ceil((start + anchor) / step) * step - anchor;
+  while (current < end) {
+    if (current > start + step * 0.28 && current < end - step * 0.28) {
+      values.push(current);
+    }
+    current += step;
+  }
+  values.push(end);
+  for (let i = 0; i < values.length; i++) {
+    const time = values[i];
+    const label = document.createElement("span");
+    label.style.left = `${((time - start) / span * 100).toFixed(3)}%`;
+    label.textContent = selectedRange === "7d" ? dayTime.format(time) :
+      selectedRange === "24h" ? shortTime.format(time) : hourTime.format(time);
+    element.append(label);
+  }
+}
+
+function applySelection(time, pin = true, force = false) {
+  const index = nearestReadingIndex(activeHistory, Number(time));
+  const scrubber = document.getElementById("timeScrubber");
+  if (index < 0) {
+    selectedIndex = -1;
+    scrubber.disabled = true;
+    document.getElementById("selectedTime").textContent = "測定データなし";
+    document.getElementById("selectedMetrics").textContent = "—";
+    return;
+  }
+  const isNew = force || index !== selectedIndex;
+  selectedIndex = index;
+  const reading = activeHistory[index];
+  // Once user returns to the newest position, keep following live updates.
+  selectionPinned = Boolean(pin) && index < activeHistory.length - 1;
+  requestedTime = reading.time;
+  scrubber.disabled = false;
+  scrubber.value = String(reading.time);
+  const percent = (reading.time - activeStart) / Math.max(1, activeEnd - activeStart) * 100;
+  scrubber.style.setProperty("--scrub-progress", `${Math.max(0, Math.min(100, percent))}%`);
+  scrubber.setAttribute("aria-valuetext", fullTime.format(reading.time) + " JST");
+  document.getElementById("selectedTime").textContent = fullTime.format(reading.time) + " JST";
+  document.getElementById("selectedMetrics").textContent =
+    `${reading.temperature.toFixed(1)} ℃　${reading.humidity.toFixed(1)} %　DI ${reading.di.toFixed(1)}`;
+  document.getElementById("phaseInfo").textContent =
+    `最新 DI ${activeHistory.at(-1).di.toFixed(1)}`;
+
+  if (!isNew || !phaseChart) return;
+  phaseChart.data.datasets[1].data = phasePoints(
+    activeHistory.slice(0, index + 1), activeGapMs, selectedRange === "7d");
+  const point = {
+    x: reading.temperature, y: reading.humidity, time: reading.time, di: reading.di,
+  };
+  phaseChart.data.datasets[2].data = [point];
+  const latest = activeHistory.at(-1);
+  phaseChart.data.datasets[3].data = index === activeHistory.length - 1 ? [] :
+    [{ x: latest.temperature, y: latest.humidity, time: latest.time, di: latest.di }];
+  phaseChart.update("none");
+  temperatureChart?.draw();
+  humidityChart?.draw();
+}
+
+function queueSelection(time, pin = true) {
+  if (nearestReadingIndex(activeHistory, time) === selectedIndex) return;
+  pendingTime = time;
+  pendingPin = pin;
+  if (selectionFrame != null) return;
+  selectionFrame = requestAnimationFrame(() => {
+    selectionFrame = null;
+    applySelection(pendingTime, pendingPin);
+  });
+}
+let pendingTime = null;
+let pendingPin = true;
+
 function renderCharts(rows, start, end, hourly) {
   if (typeof Chart === "undefined") {
     setChartMessage("グラフを読み込めませんでした．");
@@ -382,36 +464,51 @@ function renderCharts(rows, start, end, hourly) {
       document.getElementById("humidityChart"), "湿度", "humidity", "%");
     phaseChart = createPhaseChart(document.getElementById("phaseChart"));
   }
-
-  const history = normalizeHistory(rows, hourly);
-  const gapMs = hourly ? 90 * 60_000 : 5 * 60_000;
+  if (selectionFrame != null) {
+    cancelAnimationFrame(selectionFrame);
+    selectionFrame = null;
+  }
+  selectedIndex = -1;
+  activeHistory = normalizeHistory(rows, hourly);
+  activeStart = start;
+  activeEnd = end;
+  activeGapMs = hourly ? 90 * 60_000 : 5 * 60_000;
+  const bucketMs = hourly ? 3 * HOUR : 15 * 60_000;
+  const bands = comfortBands(activeHistory, bucketMs, activeGapMs);
   for (const [chart, field] of [
     [temperatureChart, "temperature"], [humidityChart, "humidity"],
   ]) {
-    chart.$comfort = { mode: "time", readings: history, gapMs };
-    chart.data.datasets[0].data = timelinePoints(history, field, gapMs);
+    chart.$comfort = { mode: "time", bands };
+    chart.data.datasets[0].data = timelinePoints(activeHistory, field, activeGapMs);
     chart.options.scales.x.min = start;
     chart.options.scales.x.max = end;
     chart.update("none");
   }
 
-  const phase = phasePoints(history, gapMs);
-  const bounds = phaseBounds(history);
+  const phase = phasePoints(activeHistory, activeGapMs, selectedRange === "7d");
+  const bounds = phaseBounds(activeHistory);
+  phaseChart.$comfort = {
+    mode: "phase",
+    firstTime: activeHistory[0]?.time,
+    lastTime: activeHistory.at(-1)?.time,
+  };
   phaseChart.data.datasets[0].data = phase;
-  phaseChart.$comfort = { mode: "phase", firstTime: history[0]?.time, lastTime: history.at(-1)?.time };
-  const latest = history.at(-1);
-  phaseChart.data.datasets[1].data = latest
-    ? [{ x: latest.temperature, y: latest.humidity, time: latest.time, di: latest.di }]
-    : [];
+  for (let i = 1; i < phaseChart.data.datasets.length; i++) {
+    phaseChart.data.datasets[i].data = [];
+  }
   phaseChart.options.scales.x.min = bounds.tMin;
   phaseChart.options.scales.x.max = bounds.tMax;
   phaseChart.options.scales.y.min = bounds.hMin;
   phaseChart.options.scales.y.max = bounds.hMax;
   phaseChart.update("none");
 
-  document.getElementById("phaseInfo").textContent = latest
-    ? `最新 DI ${latest.di.toFixed(1)}` : "データなし";
-  setChartMessage(history.length ? "" : "この期間の測定データはありません．");
+  const scrubber = document.getElementById("timeScrubber");
+  scrubber.min = String(start);
+  scrubber.max = String(end);
+  scrubber.step = "any";
+  renderTimelineTicks(start, end);
+  applySelection(selectionPinned ? requestedTime : activeHistory.at(-1)?.time, selectionPinned, true);
+  setChartMessage(activeHistory.length ? "" : "この期間の測定データはありません．");
 }
 
 async function fetchJson(url, signal) {
