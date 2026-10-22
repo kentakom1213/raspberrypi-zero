@@ -1,0 +1,33 @@
+name: Temperature API checks
+
+on:
+  pull_request:
+    paths:
+      - "temperature-logger/src/**"
+      - "temperature-logger/config.toml"
+      - "temperature-logger/tests/**"
+      - ".github/workflows/temperature-backend.yml"
+  push:
+    branches: [main]
+    paths:
+      - "temperature-logger/src/**"
+      - "temperature-logger/config.toml"
+      - "temperature-logger/tests/**"
+      - ".github/workflows/temperature-backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install API test dependencies
+        run: python -m pip install Flask requests python-dotenv
+      - name: Run backend unit and API tests
+        working-directory: temperature-logger
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
