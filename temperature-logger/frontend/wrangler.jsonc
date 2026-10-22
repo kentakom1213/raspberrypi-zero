@@ -10,7 +10,7 @@
     "run_worker_first": ["/health", "/api/*"],
   },
   "vars": {
-    "PUBLIC_API_ENABLED": "false",
+    "PUBLIC_API_ENABLED": "true",
   },
   "ratelimits": [
     {
