@@ -244,11 +244,11 @@ function createPhaseChart(canvas) {
           segment: {
             borderColor: (context) => {
               const data = context.chart.data.datasets[0].data;
-              const first = data.find((point) => point.y != null);
-              const last = [...data].reverse().find((point) => point.y != null);
+              const { firstTime, lastTime } = context.chart.$comfort || {};
               const time = data[context.p1DataIndex]?.time;
-              if (!first || !last || !Number.isFinite(time)) return colors.temperature;
-              return mixTimeColor((time - first.time) / Math.max(1, last.time - first.time));
+              if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime) ||
+                  !Number.isFinite(time)) return colors.temperature;
+              return mixTimeColor((time - firstTime) / Math.max(1, lastTime - firstTime));
             },
           },
         },
@@ -326,6 +326,7 @@ function renderCharts(rows, start, end, hourly) {
   const phase = phasePoints(history, gapMs);
   const bounds = phaseBounds(history);
   phaseChart.data.datasets[0].data = phase;
+  phaseChart.$comfort = { mode: "phase", firstTime: history[0]?.time, lastTime: history.at(-1)?.time };
   const latest = history.at(-1);
   phaseChart.data.datasets[1].data = latest
     ? [{ x: latest.temperature, y: latest.humidity, time: latest.time, di: latest.di }]
