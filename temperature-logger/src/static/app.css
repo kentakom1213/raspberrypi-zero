@@ -485,3 +485,15 @@ th { color: var(--muted); }
   .monitor-page .timeline-detail { font-size: 11px; }
   .monitor-page .timeline-detail output { font-size: 10px; }
 }
+
+@media (max-width: 1100px) {
+  .monitor-page .timeline-detail { flex-wrap: wrap; }
+}
+@media (max-width: 600px) {
+  .monitor-page .timeline-detail {
+    align-items: flex-start;
+    gap: 2px;
+    flex-direction: column;
+  }
+  .monitor-page .timeline-detail output { text-align: left; }
+}
