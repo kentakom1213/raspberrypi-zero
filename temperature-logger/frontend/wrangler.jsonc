@@ -7,20 +7,23 @@
     "directory": "./dist",
     "html_handling": "drop-trailing-slash",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/health", "/api/*"]
+    "run_worker_first": ["/health", "/api/*"],
   },
   "vars": {
-    "PUBLIC_API_ENABLED": "false"
+    "PUBLIC_API_ENABLED": "false",
   },
   "ratelimits": [
     {
       "name": "API_RATE_LIMIT",
       "namespace_id": "20261022",
-      "simple": { "limit": 120, "period": 60 }
-    }
-  ]
-  // When the Cloudflare VPC Service is created, add:
-  // "vpc_services": [
-  //   { "binding": "PI_API", "service_id": "<actual-service-id>", "remote": true }
-  // ]
+      "simple": { "limit": 120, "period": 60 },
+    },
+  ],
+  "vpc_services": [
+    {
+      "binding": "PI_API",
+      "service_id": "01a16241-7537-7ba2-aef2-59f4c662a2ca",
+      "remote": true,
+    },
+  ],
 }
