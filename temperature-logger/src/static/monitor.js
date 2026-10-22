@@ -119,66 +119,100 @@ function xAxis(start, end) {
 // This plugin draws genuine index-based iso-regions in the phase plane.
 // Time plots are shaded VERTICALLY by the simultaneous T/RH index;
 // horizontal stripes by temperature or RH alone would be misleading.
+// Cache the DI background: scrubbing the trajectory must not recompute
+// tens of thousands of temperature/humidity cells at every pointer move.
+function paintPhaseBackground(chart, area) {
+  const { x, y } = chart.scales;
+  const width = Math.ceil(area.right - area.left);
+  const height = Math.ceil(area.bottom - area.top);
+  if (width <= 0 || height <= 0) return;
+  const key = [width, height, x.min, x.max, y.min, y.max].join(":");
+  if (chart.$phaseBackground?.key !== key) {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    const step = 3;
+    for (let px = 0; px < width; px += step) {
+      for (let py = 0; py < height; py += step) {
+        const temperature = x.getValueForPixel(area.left + Math.min(px + 1.5, width));
+        const humidity = y.getValueForPixel(area.top + Math.min(py + 1.5, height));
+        ctx.fillStyle = comfortColor(discomfortIndex(temperature, humidity), 0.27);
+        ctx.fillRect(px, py, Math.min(step, width - px), Math.min(step, height - py));
+      }
+    }
+    ctx.lineWidth = 0.75;
+    ctx.strokeStyle = "rgba(80, 88, 96, .16)";
+    ctx.setLineDash([3, 4]);
+    for (const index of [65, 75, 80, 85]) {
+      ctx.beginPath();
+      let connected = false;
+      for (let px = 0; px < width; px += 2) {
+        const temperature = x.getValueForPixel(area.left + px);
+        const rh = humidityAtIndex(temperature, index);
+        if (rh == null || !Number.isFinite(rh) || rh < y.min || rh > y.max) {
+          connected = false;
+          continue;
+        }
+        const py = y.getPixelForValue(rh) - area.top;
+        if (connected) ctx.lineTo(px, py);
+        else ctx.moveTo(px, py);
+        connected = true;
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    chart.$phaseBackground = { key, canvas };
+  }
+  chart.ctx.drawImage(chart.$phaseBackground.canvas, area.left, area.top);
+}
+
 const comfortBackground = {
   id: "comfortBackground",
   beforeDatasetsDraw(chart) {
-    const { ctx, chartArea: area, scales } = chart;
-    const config = chart.$comfort;
+    const { ctx, chartArea: area, scales, $comfort: config } = chart;
     if (!area || !config) return;
     ctx.save();
     ctx.beginPath();
     ctx.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
     ctx.clip();
     if (config.mode === "time") {
-      const rows = config.readings;
-      const x = scales.x;
-      for (let i = 0; i < rows.length - 1; i++) {
-        const current = rows[i];
-        const next = rows[i + 1];
-        if (next.time - current.time >= config.gapMs) continue;
-        const a = Math.max(area.left, x.getPixelForValue(current.time));
-        const b = Math.min(area.right, x.getPixelForValue(next.time));
-        if (b > a) {
-          ctx.fillStyle = comfortColor(current.di, 0.43);
-          ctx.fillRect(a, area.top, b - a, area.bottom - area.top);
-        }
+      for (const band of config.bands || []) {
+        const a = Math.max(area.left, scales.x.getPixelForValue(band.start));
+        const b = Math.min(area.right, scales.x.getPixelForValue(band.end));
+        if (b <= a) continue;
+        ctx.fillStyle = comfortColor(band.di, 0.20);
+        ctx.fillRect(a, area.top, b - a, area.bottom - area.top);
       }
     } else if (config.mode === "phase") {
-      const x = scales.x;
-      const y = scales.y;
-      const step = 7;
-      for (let px = area.left; px < area.right; px += step) {
-        for (let py = area.top; py < area.bottom; py += step) {
-          const temperature = x.getValueForPixel(Math.min(px + step / 2, area.right));
-          const humidity = y.getValueForPixel(Math.min(py + step / 2, area.bottom));
-          ctx.fillStyle = comfortColor(discomfortIndex(temperature, humidity), 0.72);
-          ctx.fillRect(px, py, Math.min(step + .5, area.right - px),
-            Math.min(step + .5, area.bottom - py));
-        }
-      }
-      // Fine contour lines at index thresholds, curved in T/RH coordinates.
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(73,83,94,0.27)";
-      ctx.setLineDash([3, 4]);
-      for (const index of [65, 75, 80, 85]) {
-        ctx.beginPath();
-        let connected = false;
-        for (let px = area.left; px <= area.right + 1; px += 3) {
-          const t = x.getValueForPixel(px);
-          const rh = humidityAtIndex(t, index);
-          if (rh == null || !Number.isFinite(rh) || rh < y.min || rh > y.max) {
-            connected = false;
-            continue;
-          }
-          const py = y.getPixelForValue(rh);
-          if (!connected) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-          connected = true;
-        }
-        ctx.stroke();
-      }
-      ctx.setLineDash([]);
+      paintPhaseBackground(chart, area);
     }
+    ctx.restore();
+  },
+  afterDatasetsDraw(chart) {
+    if (chart.$comfort?.mode !== "time" || selectedIndex < 0) return;
+    const reading = activeHistory[selectedIndex];
+    const { ctx, chartArea: area, scales } = chart;
+    if (!reading || !area) return;
+    const px = scales.x.getPixelForValue(reading.time);
+    const py = scales.y.getPixelForValue(reading[chart.$field]);
+    if (!Number.isFinite(px) || !Number.isFinite(py) || px < area.left || px > area.right) return;
+    ctx.save();
+    ctx.strokeStyle = "rgba(57, 67, 80, .55)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(px, area.top);
+    ctx.lineTo(px, area.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = chart.$field === "temperature" ? colors.temperature : colors.humidity;
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(px, py, 4.5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   },
 };
