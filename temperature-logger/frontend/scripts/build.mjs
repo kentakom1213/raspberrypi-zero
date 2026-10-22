@@ -11,6 +11,8 @@ const assets = [
   ["app.css", "static/app.css"],
   ["monitor.js", "static/monitor.js"],
   ["comfort.mjs", "static/comfort.mjs"],
+  ["stats.js", "static/stats.js"],
+  ["stats-utils.mjs", "static/stats-utils.mjs"],
 ];
 
 for (const [name] of assets) {
