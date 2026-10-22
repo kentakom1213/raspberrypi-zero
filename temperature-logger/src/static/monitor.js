@@ -1,6 +1,7 @@
 import {
   discomfortIndex, comfortColor, humidityAtIndex,
   normalizeHistory, timelinePoints, phasePoints,
+  phaseBounds, nearestReadingIndex, comfortBands,
 } from "/static/comfort.mjs";
 
 const HOUR = 60 * 60 * 1000;
@@ -30,6 +31,14 @@ let humidityChart = null;
 let phaseChart = null;
 let activeController = null;
 let requestNumber = 0;
+let activeHistory = [];
+let activeGapMs = 5 * 60_000;
+let activeStart = 0;
+let activeEnd = 0;
+let selectedIndex = -1;
+let selectionPinned = false;
+let requestedTime = null;
+let selectionFrame = null;
 
 function setNotice(message) {
   const element = document.getElementById("notice");
