@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import requests
 import tomllib
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 from sensor_dht22 import DHT22Reader
 
 import storage
@@ -31,7 +31,7 @@ SERVER_PORT = int(config["server"].get("port", 8000))
 MAX_READINGS = int(config.get("chart", {}).get("max_points", 300))
 DB_PATH = ROOT_DIR / config.get("storage", {}).get("path", "data/readings.db")
 
-app = Flask(__name__, static_folder="static", static_url_path="/static")
+app = Flask(__name__, static_folder=None)
 sensor = DHT22Reader(
     pin_name=DHT_PIN, retries=DHT_RETRIES, delay_seconds=DHT_RETRY_DELAY_SECONDS
 )
@@ -141,26 +141,10 @@ def iso_to_bound_ms(value):
 
 @app.after_request
 def add_cache_headers(response):
-    path = request.path
-    if path in {"/", "/stats", "/health", "/api/readings"} or path.startswith(
-        "/static/"
-    ):
-        response.headers["Cache-Control"] = (
-            "public, max-age=60, s-maxage=60, stale-while-revalidate=60"
-        )
-    else:
-        response.headers["Cache-Control"] = "no-store"
+    # The API is private to the Raspberry Pi and Workers VPC. Cloudflare
+    # Worker handles public caching independently.
+    response.headers["Cache-Control"] = "no-store"
     return response
-
-
-@app.route("/")
-def index():
-    return send_from_directory(app.static_folder, "index.html")
-
-
-@app.route("/stats")
-def stats_page():
-    return send_from_directory(app.static_folder, "stats.html")
 
 
 @app.route("/health")
