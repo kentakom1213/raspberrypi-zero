@@ -428,20 +428,33 @@ async function renderTrend(token) {
   const buckets = current.buckets || [], old = prior.buckets || [];
   trendKpis(current.summary,prior.summary);
   renderTrendTable(buckets);
-  const metric = state.trendMetric, col = COLORS[metric];
-  const average = (list, suffix) => list.map(b=>hasData(b)?b[metric+"_"+suffix]:null);
-  const opt = baseChartOptions(unit(metric));
-  buildChart("trend","trendChart",{
-    type:"line",data:{
-      labels:buckets.map(b=>groupLabel(b,state.group)),
-      datasets:[
-        statsLine("最高",col,average(buckets,"max"), { borderWidth:1, fill:{ target:1, above:"rgba(201,103,44,.08)" } }),
-        statsLine("最低",col,average(buckets,"min"), { borderWidth:1 }),
-        statsLine("平均",col,average(buckets,"avg"), { borderWidth:2.8, pointRadius:2 }),
-        statsLine("前期間の平均", "#95a3ae",average(old,"avg"), { borderDash:[5,4], borderWidth:1.7 }),
-      ],
-    },options:opt,
-  });
+  for (const [slot, metric] of [
+    ["trend", state.trendMetric],
+    ["trendSecondary", state.trendMetric === "temperature" ? "humidity" : "temperature"],
+  ]) {
+    if (slot === "trendSecondary") {
+      $("trendSecondaryHeading").textContent = (metric === "temperature" ? "気温" : "湿度") + "の推移";
+    }
+    const col = COLORS[metric];
+    const average = (list, suffix) => list.map(b=>hasData(b)?b[metric+"_"+suffix]:null);
+    const opt = baseChartOptions(unit(metric));
+    const fill = metric === "temperature" ? "rgba(201,103,44,.08)" : "rgba(50,123,173,.08)";
+    buildChart(slot, slot === "trend" ? "trendChart" : "trendSecondaryChart", {
+      type: "line",
+      data: {
+        labels: buckets.map(b=>groupLabel(b,state.group)),
+        datasets: [
+          statsLine("最高",col,average(buckets,"max"),
+            { borderWidth:1, fill:{ target:1, above:fill } }),
+          statsLine("最低",col,average(buckets,"min"), { borderWidth:1 }),
+          statsLine("平均",col,average(buckets,"avg"), { borderWidth:2.8, pointRadius:2 }),
+          statsLine("前期間の平均","#95a3ae",average(old,"avg"),
+            { borderDash:[5,4], borderWidth:1.7 }),
+        ],
+      },
+      options: opt,
+    });
+  }
 }
 function comparisonKpis(current, prior) {
   const parent = $("compareKpis");
