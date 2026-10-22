@@ -80,6 +80,15 @@
             <span>過去</span><span class="age-gradient" aria-hidden="true"></span><span>最新</span>
             <span class="phase-info" id="phaseInfo">—</span>
           </div>
+          <div class="phase-timeline" aria-label="軌跡の時間を選択">
+            <div class="timeline-detail">
+              <time id="selectedTime">—</time>
+              <output id="selectedMetrics" for="timeScrubber">—</output>
+            </div>
+            <input type="range" id="timeScrubber" min="0" max="1" step="any"
+              value="1" disabled aria-label="軌跡の日時を選択" />
+            <div class="timeline-ticks" id="timelineTicks" aria-hidden="true"></div>
+          </div>
         </section>
       </section>
 
