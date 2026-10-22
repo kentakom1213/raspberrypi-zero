@@ -338,15 +338,13 @@ class ApiTests(TempDatabaseTest):
         self.assertEqual(response.json["summary"]["count"], 1)
         self.assertEqual(response.json["summary"]["temperature_avg"], 21)
 
-    def test_stats_page_and_existing_routes(self):
-        stats = self.client.get("/stats")
-        self.assertEqual(stats.status_code, 200)
-        stats.close()
-        index = self.client.get("/")
-        self.assertIn(b'href="/stats"', index.data)
-        index.close()
+    def test_api_only_routes_and_no_static_frontend(self):
+        for path in ["/", "/stats", "/static/index.html", "/static/app.css", "/static/monitor.js"]:
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 404)
         self.assertEqual(self.client.get("/health").status_code, 200)
         self.assertEqual(self.client.get("/api/readings").json, [])
+        self.assertEqual(self.client.get("/api/stats?interval=day").status_code, 200)
 
 
 if __name__ == "__main__":
