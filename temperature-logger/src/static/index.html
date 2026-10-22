@@ -6,67 +6,94 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/static/app.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
-    <script src="/static/monitor.js" defer></script>
+    <script src="/static/monitor.js" type="module"></script>
   </head>
   <body>
-    <main>
+    <main class="monitor-page">
       <header class="site-header">
         <a class="brand" href="/">温湿度モニター</a>
         <nav class="nav" aria-label="ページ">
           <a href="/" aria-current="page">現在の温湿度</a>
           <a href="/stats">統計・履歴</a>
         </nav>
-      </header>
-
-      <section class="monitor-heading" aria-label="測定状態">
-        <p class="eyebrow">LIVE MONITOR</p>
-        <h1>現在の温湿度</h1>
-        <p class="muted">室内の空気を，いつでも見やすく．</p>
         <div class="current-status" id="currentStatus" data-state="unknown" role="status">
           <span class="status-dot" aria-hidden="true"></span>
-          <span id="statusLabel">測定値を確認しています</span>
+          <span id="statusLabel">測定値を確認中</span>
           <span class="measured-at" id="measuredAt">最終測定：—</span>
         </div>
-      </section>
+      </header>
 
-      <section class="current-values" aria-label="現在値">
-        <div class="metric-temperature">
-          <span class="metric-label">気温</span>
-          <span class="metric-value"><span id="temperatureValue">—</span><small>℃</small></span>
-        </div>
-        <div class="metric-humidity">
-          <span class="metric-label">湿度</span>
-          <span class="metric-value"><span id="humidityValue">—</span><small>%</small></span>
-        </div>
+      <section class="current-values" aria-label="現在の温湿度">
+        <article class="metric-temperature">
+          <div>
+            <h1 class="metric-label">現在の気温</h1>
+            <p class="metric-value"><span id="temperatureValue">—</span><small>℃</small></p>
+          </div>
+        </article>
+        <article class="metric-humidity">
+          <div>
+            <h2 class="metric-label">現在の湿度</h2>
+            <p class="metric-value"><span id="humidityValue">—</span><small>%</small></p>
+          </div>
+        </article>
       </section>
 
       <p class="notice" id="notice" role="alert" hidden></p>
       <details class="error-details" id="errorDetails" hidden>
-        <summary>センサー・Ambient のエラー</summary>
+        <summary>測定・送信エラーの詳細</summary>
         <p id="errorValue"></p>
       </details>
 
-      <section aria-labelledby="historyTitle">
-        <div class="section-heading">
-          <h2 id="historyTitle">温湿度の推移</h2>
-          <p>時刻は日本標準時（JST）</p>
-        </div>
-        <div class="button-group range-controls" role="group" aria-label="表示期間">
-          <button type="button" data-range="1h">1時間</button>
-          <button type="button" data-range="6h">6時間</button>
-          <button type="button" data-range="24h">24時間</button>
-          <button type="button" data-range="7d">7日間</button>
-        </div>
-        <div class="chart-section temperature">
-          <h3>気温 <span class="muted">℃</span></h3>
-          <div class="chart-area"><canvas id="temperatureChart" role="img" aria-label="気温の時間別推移"></canvas></div>
-        </div>
-        <div class="chart-section humidity">
-          <h3>湿度 <span class="muted">%</span></h3>
-          <div class="chart-area"><canvas id="humidityChart" role="img" aria-label="湿度の時間別推移"></canvas></div>
-        </div>
-        <p class="chart-message" id="chartMessage" role="status" hidden></p>
+      <section class="monitor-analysis" aria-label="最近の温湿度の可視化">
+        <section class="trend-panel" aria-labelledby="historyTitle">
+          <header class="panel-header">
+            <h2 id="historyTitle">過去の推移</h2>
+            <div class="button-group range-controls" role="group" aria-label="3つのグラフに共通の表示期間">
+              <button type="button" data-range="1h">1h</button>
+              <button type="button" data-range="6h">6h</button>
+              <button type="button" data-range="24h">24h</button>
+              <button type="button" data-range="7d">7d</button>
+            </div>
+          </header>
+          <div class="trend-stack">
+            <section class="chart-section temperature" aria-labelledby="temperatureTitle">
+              <h3 id="temperatureTitle">気温 <span class="muted">（℃）</span></h3>
+              <div class="chart-area"><canvas id="temperatureChart" role="img" aria-label="気温の推移と同時刻の不快指数の背景色"></canvas></div>
+            </section>
+            <section class="chart-section humidity" aria-labelledby="humidityTitle">
+              <h3 id="humidityTitle">湿度 <span class="muted">（%）</span></h3>
+              <div class="chart-area"><canvas id="humidityChart" role="img" aria-label="湿度の推移と同時刻の不快指数の背景色"></canvas></div>
+            </section>
+          </div>
+          <p class="chart-message" id="chartMessage" role="status" hidden></p>
+        </section>
+
+        <section class="phase-panel" aria-labelledby="phaseTitle">
+          <header class="panel-header">
+            <h2 id="phaseTitle">気温 × 湿度</h2>
+            <span class="panel-subtitle">時間順の軌跡</span>
+          </header>
+          <div class="phase-chart-area">
+            <canvas id="phaseChart" role="img" aria-label="気温を横軸，湿度を縦軸とした変化の軌跡と不快指数の等値領域"></canvas>
+          </div>
+          <div class="phase-legend">
+            <span>過去</span><span class="age-gradient" aria-hidden="true"></span><span>最新</span>
+            <span class="phase-info" id="phaseInfo">—</span>
+          </div>
+        </section>
       </section>
+
+      <footer class="monitor-footer">
+        <div class="comfort-legend" aria-label="不快指数による背景の色分け">
+          <strong>不快指数</strong>
+          <span><i class="di-cool"></i>65未満</span>
+          <span><i class="di-comfort"></i>65–75</span>
+          <span><i class="di-warm"></i>75–80</span>
+          <span><i class="di-hot"></i>80–85</span>
+          <span><i class="di-very-hot"></i>85以上</span>
+        </div>
+        <span class="comfort-note">背景色は同時刻の気温・湿度に基づく参考値 · JST</span>
+      </footer>
       <noscript><p>グラフを表示するには JavaScript を有効にしてください．</p></noscript>
     </main>
   </body>
