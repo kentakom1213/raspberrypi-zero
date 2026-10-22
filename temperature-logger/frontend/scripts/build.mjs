@@ -10,6 +10,7 @@ const assets = [
   ["stats.html", "stats.html"],
   ["app.css", "static/app.css"],
   ["monitor.js", "static/monitor.js"],
+  ["comfort.mjs", "static/comfort.mjs"],
 ];
 
 for (const [name] of assets) {

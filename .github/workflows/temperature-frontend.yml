@@ -38,3 +38,4 @@ jobs:
           test -f dist/stats.html
           test -f dist/static/app.css
           test -f dist/static/monitor.js
+          test -f dist/static/comfort.mjs
