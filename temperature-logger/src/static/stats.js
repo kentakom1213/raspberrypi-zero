@@ -27,12 +27,24 @@ function parseState() {
   const defaultStart = periodWindow(group).start;
   const start = parseDay(p.get("start"));
   const maxStart = periodWindow(group).start;
+  const calendarMode = p.get("mode") === "year" ? "year" : "month";
+  const selectedYear = Number.isInteger(year) && year >= 2000 && year <= now.getUTCFullYear()
+    ? year : now.getUTCFullYear();
+  const selectedMonth = Number.isInteger(month) && month >= 1 && month <= 12
+    ? month : now.getUTCMonth() + 1;
+  const monthEnd = addDays(addMonths(new Date(Date.UTC(selectedYear, selectedMonth - 1, 1)), 1), -1);
+  const yearEnd = new Date(Date.UTC(selectedYear, 11, 31));
+  const latest = calendarMode === "year" ? yearEnd : monthEnd;
+  const effectiveLatest = latest > now ? now : latest;
+  const samePeriod = date && (calendarMode === "year"
+    ? date.getUTCFullYear() === selectedYear
+    : date.getUTCFullYear() === selectedYear && date.getUTCMonth() + 1 === selectedMonth);
   return {
     view: ["calendar", "trend", "compare"].includes(p.get("view")) ? p.get("view") : "calendar",
-    calendarMode: p.get("mode") === "year" ? "year" : "month",
-    year: Number.isInteger(year) && year >= 2000 && year <= now.getUTCFullYear() ? year : now.getUTCFullYear(),
-    month: Number.isInteger(month) && month >= 1 && month <= 12 ? month : now.getUTCMonth() + 1,
-    day: date && date <= now ? isoDay(date) : TODAY(),
+    calendarMode,
+    year: selectedYear,
+    month: selectedMonth,
+    day: samePeriod && date <= now ? isoDay(date) : isoDay(effectiveLatest),
     metric: Object.hasOwn(METRICS, selectedMetric) ? selectedMetric : "temperature",
     group,
     trendMetric: ["temperature", "humidity"].includes(trendMetric) ? trendMetric : "temperature",
@@ -511,13 +523,19 @@ document.querySelectorAll("[data-calendar-mode]").forEach(b=>b.addEventListener(
 $("calPrevious").addEventListener("click",()=>{
   const date = state.calendarMode === "year" ? new Date(Date.UTC(state.year-1,0,1)) :
     addMonths(new Date(Date.UTC(state.year,state.month-1,1)),-1);
-  change({year:date.getUTCFullYear(),month:date.getUTCMonth()+1});
+  const target = state.calendarMode === "year" ?
+    new Date(Date.UTC(date.getUTCFullYear(), 11, 31)) : addDays(addMonths(date, 1), -1);
+  change({year:date.getUTCFullYear(),month:date.getUTCMonth()+1,
+    day:isoDay(target>today()?today():target)});
 });
 $("calNext").addEventListener("click",()=>{
   const date = state.calendarMode === "year" ? new Date(Date.UTC(state.year+1,0,1)) :
     addMonths(new Date(Date.UTC(state.year,state.month-1,1)),1);
   if(date>today())return;
-  change({year:date.getUTCFullYear(),month:date.getUTCMonth()+1});
+  const target = state.calendarMode === "year" ?
+    new Date(Date.UTC(date.getUTCFullYear(), 11, 31)) : addDays(addMonths(date, 1), -1);
+  change({year:date.getUTCFullYear(),month:date.getUTCMonth()+1,
+    day:isoDay(target>today()?today():target)});
 });
 function changeDay(delta) {
   const next = addDays(parseDay(state.day),delta);
