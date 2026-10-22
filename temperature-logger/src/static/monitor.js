@@ -278,32 +278,62 @@ function createPhaseChart(canvas) {
     data: {
       datasets: [
         {
-          label: "変化の軌跡", data: [], parsing: false,
-          borderColor: colors.temperature, borderWidth: 2.5,
-          pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 9,
-          tension: 0.16, spanGaps: false,
+          label: "全期間", data: [], parsing: false,
+          borderColor: "rgba(88, 104, 115, .18)", borderWidth: 1.7,
+          pointRadius: 0, pointHitRadius: 12,
+          tension: 0, spanGaps: false,
+        },
+        {
+          label: "選択時刻まで", data: [], parsing: false,
+          borderColor: colors.temperature, borderWidth: 2.1,
+          pointRadius: 0, pointHitRadius: 12,
+          tension: 0, spanGaps: false,
           segment: {
             borderColor: (context) => {
-              const data = context.chart.data.datasets[0].data;
+              const data = context.chart.data.datasets[1].data;
               const { firstTime, lastTime } = context.chart.$comfort || {};
               const time = data[context.p1DataIndex]?.time;
               if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime) ||
                   !Number.isFinite(time)) return colors.temperature;
-              return mixTimeColor((time - firstTime) / Math.max(1, lastTime - firstTime));
+              const ratio = Math.max(0, Math.min(1,
+                (time - firstTime) / Math.max(1, lastTime - firstTime)));
+              const rgb = mixTimeColor(ratio);
+              // Older parts remain identifiable without overpowering newer ones.
+              return rgb.replace("rgb(", "rgba(").replace(")", `,${(0.3 + 0.7 * ratio).toFixed(2)})`);
             },
           },
         },
         {
+          label: "選択位置", data: [], parsing: false, showLine: false,
+          pointRadius: 6, pointHoverRadius: 8, pointHitRadius: 12,
+          pointBackgroundColor: colors.temperature, pointBorderColor: "#fff",
+          pointBorderWidth: 2.5,
+        },
+        {
           label: "最新", data: [], parsing: false, showLine: false,
-          pointRadius: 6, pointHoverRadius: 8,
-          pointBackgroundColor: colors.temperature,
-          pointBorderColor: "#fff", pointBorderWidth: 2.5,
+          pointRadius: 4, pointHoverRadius: 6, pointHitRadius: 10,
+          pointBackgroundColor: "#fff", pointBorderColor: colors.temperature,
+          pointBorderWidth: 1.6,
         },
       ],
     },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       interaction: { mode: "nearest", intersect: false },
+      onHover(event, items, source) {
+        if (!source.chartArea ||
+            event.x < source.chartArea.left || event.x > source.chartArea.right ||
+            event.y < source.chartArea.top || event.y > source.chartArea.bottom) return;
+        for (const item of items) {
+          const point = source.data.datasets[item.datasetIndex].data[item.index];
+          if (!point || !Number.isFinite(point.time) || point.y == null) continue;
+          const distance = Math.hypot(item.element.x - event.x, item.element.y - event.y);
+          if (distance < 25) {
+            queueSelection(point.time, true);
+            return;
+          }
+        }
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -313,23 +343,24 @@ function createPhaseChart(canvas) {
               const { x, y } = item.parsed;
               return `${x.toFixed(1)} ℃ ／ ${y.toFixed(1)} %`;
             },
-            afterLabel: (item) => `不快指数：${item.raw.di.toFixed(1)}`,
+            afterLabel: (item) => item.raw.di == null ? "" :
+              `不快指数：${item.raw.di.toFixed(1)}`,
           },
         },
       },
       scales: {
         x: {
-          type: "linear", min: 16, max: 32,
+          type: "linear", min: 20, max: 30,
           title: { display: true, text: "気温（℃）", font: { size: 11 } },
           ticks: { maxTicksLimit: 7, font: { size: 10 } },
-          grid: { color: "rgba(255,255,255,0.7)" },
+          grid: { color: "rgba(140,147,153,0.09)" },
           border: { display: false },
         },
         y: {
-          type: "linear", min: 25, max: 85,
+          type: "linear", min: 30, max: 70,
           title: { display: true, text: "湿度（%）", font: { size: 11 } },
           ticks: { maxTicksLimit: 7, font: { size: 10 } },
-          grid: { color: "rgba(255,255,255,0.7)" },
+          grid: { color: "rgba(140,147,153,0.09)" },
           border: { display: false },
         },
       },
