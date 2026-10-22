@@ -33,6 +33,8 @@ jobs:
           node --check src/index.js
           node --check ../src/static/monitor.js
           node --check ../src/static/comfort.mjs
+          node --check ../src/static/stats.js
+          node --check ../src/static/stats-utils.mjs
       - name: Build and unit tests
         run: npm run check
       - name: Confirm output files
@@ -42,3 +44,5 @@ jobs:
           test -f dist/static/app.css
           test -f dist/static/monitor.js
           test -f dist/static/comfort.mjs
+          test -f dist/static/stats.js
+          test -f dist/static/stats-utils.mjs
