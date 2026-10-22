@@ -497,3 +497,100 @@ th { color: var(--muted); }
   }
   .monitor-page .timeline-detail output { text-align: left; }
 }
+
+/* Stats dashboard: isolated from the compact live monitor. */
+.stats-dashboard{max-width:1500px;padding:20px 28px 64px}
+.stats-dashboard .site-header{margin-bottom:16px;padding-bottom:14px}
+.stats-dashboard .stats-title{display:flex;align-items:baseline;gap:16px;margin-bottom:14px}
+.stats-dashboard .stats-title h1{font-size:27px;margin:0}
+.stats-dashboard .stats-title span,.stats-dashboard .stats-note{color:var(--muted);font-size:12px}
+.stats-dashboard [hidden]{display:none!important}
+.stats-dashboard .stats-tabs{display:flex;gap:5px;border-bottom:1px solid var(--line);margin-bottom:15px}
+.stats-dashboard .stats-tabs button{border:0;border-radius:7px 7px 0 0;padding:8px 24px;font-size:14px;background:none;color:var(--muted)}
+.stats-dashboard .stats-tabs button[aria-selected="true"]{background:#fff3ea;border-bottom:2px solid var(--temperature);color:var(--temperature);font-weight:700}
+.stats-dashboard .stats-toolbar{display:flex;align-items:center;gap:10px 20px;flex-wrap:wrap;margin:12px 0 15px}
+.stats-dashboard .stats-toolbar .stats-nav,.stats-dashboard .stats-compare-period{margin-left:auto}
+.stats-dashboard .control-set{gap:7px}
+.stats-dashboard .control-label{font-size:12px}
+.stats-dashboard .button-group{gap:4px}
+.stats-dashboard .button-group button{padding:6px 12px;border-radius:6px;font-size:13px}
+.stats-dashboard select{border:1px solid var(--line);border-radius:6px;padding:7px 9px;color:var(--ink);background:white;font:inherit;font-size:13px}
+.stats-dashboard .stats-nav{display:flex;align-items:center;gap:6px;font-size:14px}
+.stats-dashboard .stats-nav strong{min-width:110px;text-align:center;white-space:nowrap}
+.stats-dashboard .stats-nav button{font-size:20px;line-height:1.4;padding:2px 10px}
+.stats-dashboard .stats-error{border-left:3px solid #c45b40;padding:9px 12px;background:#fff3ee;margin:8px 0}
+.stats-dashboard .stats-loading,.stats-dashboard .stats-empty{font-size:13px;color:var(--muted);margin:8px 0}
+.stats-dashboard .stats-panel{background:white;border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.stats-dashboard .stats-panel h2{font-size:17px;margin:0}
+.stats-dashboard .card-heading{display:flex;align-items:baseline;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.stats-dashboard .stats-note{margin:7px 0 0;line-height:1.5}
+.stats-dashboard .calendar-overview{display:grid;grid-template-columns:1.08fr .92fr;gap:14px}
+.stats-dashboard .calendar-weekdays,.stats-dashboard .calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.stats-dashboard .calendar-weekdays{text-align:center;font-size:11px;color:var(--muted);margin-bottom:5px}
+.stats-dashboard .calendar-grid{gap:3px}
+.stats-dashboard .calendar-day,.stats-dashboard .calendar-pad{height:65px;border-radius:5px;border:1px solid #ffffff70;min-width:0}
+.stats-dashboard .calendar-pad{background:#f8f7f6}
+.stats-dashboard .calendar-day{position:relative;display:flex;align-items:center;flex-direction:column;justify-content:center;gap:3px;padding:3px;color:#263546}
+.stats-dashboard .calendar-day .calendar-day-number{font-size:12px;font-weight:600}
+.stats-dashboard .calendar-day .calendar-day-value{font-size:12px;font-variant-numeric:tabular-nums}
+.stats-dashboard .calendar-day[aria-pressed="true"],.stats-dashboard .annual-day[aria-pressed="true"]{outline:2px solid var(--temperature);outline-offset:-2px;z-index:1}
+.stats-dashboard .calendar-day:focus-visible,.stats-dashboard .annual-day:focus-visible{outline:3px solid var(--humidity)}
+.stats-dashboard .calendar-day[data-missing="true"],.stats-dashboard .annual-day[data-missing="true"]{background:repeating-linear-gradient(135deg,#f5f3f1,#f5f3f1 5px,#eae7e4 5px,#eae7e4 6px)!important;color:#969c9f}
+.stats-dashboard .calendar-day[data-low="true"]::after,.stats-dashboard .annual-day[data-low="true"]::after{content:"";position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;background:#c86d4c}
+.stats-dashboard .calendar-day:disabled,.stats-dashboard .annual-day:disabled{opacity:.3;cursor:default}
+.stats-dashboard .calendar-bottom{display:grid;grid-template-columns:auto minmax(100px,1fr);gap:5px 12px;align-items:center;margin-top:12px;font-size:11px}
+.stats-dashboard .calendar-bottom>span:first-child{font-weight:650}
+.stats-dashboard .heat-legend{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.stats-dashboard .heat-ramp{flex:1;height:7px;border-radius:9px;background:linear-gradient(90deg,#8cbfec,#c3e0e9,#f0e6b5,#f7b487,#ed7870)}
+.stats-dashboard .coverage-hint{grid-column:1/-1;color:var(--muted)}
+.stats-dashboard .annual-heatmap{display:grid;gap:6px}
+.stats-dashboard .annual-axis,.stats-dashboard .annual-month{display:grid;grid-template-columns:34px repeat(31,minmax(0,1fr));gap:2px;align-items:center}
+.stats-dashboard .annual-axis{font-size:9px;color:var(--muted);text-align:center}
+.stats-dashboard .annual-month strong{font-size:10px}
+.stats-dashboard .annual-day{position:relative;padding:0;min-width:0;height:18px;border:1px solid #ffffffa0;border-radius:2px}
+.stats-dashboard .day-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.stats-dashboard .kpi{border:1px solid #eee9e3;border-radius:8px;padding:11px 13px;min-width:0}
+.stats-dashboard .kpi span,.stats-dashboard .kpi small{display:block;color:var(--muted);font-size:12px}
+.stats-dashboard .kpi strong{display:block;font-size:23px;margin:3px 0;font-variant-numeric:tabular-nums}
+.stats-dashboard .kpi-temperature{background:#fff8f3}
+.stats-dashboard .kpi-temperature strong{color:var(--temperature)}
+.stats-dashboard .kpi-humidity{background:#f4faff}
+.stats-dashboard .kpi-humidity strong{color:var(--humidity)}
+.stats-dashboard .daily-details{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-top:14px}
+.stats-dashboard .stats-chart-area{height:245px;position:relative}
+.stats-dashboard .trend-main .stats-chart-area{height:340px}
+.stats-dashboard .table-panel{margin-top:14px}
+.stats-dashboard .table-panel summary{font-size:14px;font-weight:700;cursor:pointer}
+.stats-dashboard .table-panel summary span{font-size:11px;color:var(--muted);font-weight:400;float:right}
+.stats-dashboard .table-panel .table-scroll{margin-top:12px;max-height:390px;overflow:auto}
+.stats-dashboard table{min-width:660px;font-size:12px}
+.stats-dashboard th,.stats-dashboard td{padding:7px 9px}
+.stats-dashboard thead{position:sticky;top:0;background:white;z-index:1}
+.stats-dashboard .table-row-selected{background:#fff4ed}
+.stats-dashboard .row-link{border:none;padding:0;background:none;text-decoration:underline;font:inherit;border-radius:0}
+.stats-dashboard .stats-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.stats-dashboard .stats-kpis .kpi strong{font-size:24px}
+.stats-dashboard .stats-kpis .kpi small{font-size:11px}
+.stats-dashboard .stats-compare-period{font-size:12px;color:var(--muted)}
+.stats-dashboard .comparison-plots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.stats-dashboard .comparison-plots .stats-chart-area{height:265px}
+.stats-dashboard .compare-summary{margin-top:14px}
+.stats-dashboard .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:1020px){
+.stats-dashboard .calendar-overview,.stats-dashboard .daily-details{grid-template-columns:1fr}
+}
+@media(max-width:720px){
+.stats-dashboard{padding:16px}
+.stats-dashboard .stats-title{flex-wrap:wrap;gap:4px 12px}
+.stats-dashboard .stats-tabs button{flex:1;padding:8px 10px}
+.stats-dashboard .stats-toolbar .stats-nav,.stats-dashboard .stats-compare-period{margin-left:0}
+.stats-dashboard .calendar-day,.stats-dashboard .calendar-pad{height:49px}
+.stats-dashboard .calendar-day .calendar-day-number{font-size:11px}
+.stats-dashboard .calendar-day .calendar-day-value{font-size:10px}
+.stats-dashboard .kpi{padding:10px}
+.stats-dashboard .kpi strong{font-size:19px}
+.stats-dashboard .stats-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+.stats-dashboard .comparison-plots{grid-template-columns:1fr}
+.stats-dashboard .annual-day{height:14px}
+.stats-dashboard .annual-axis,.stats-dashboard .annual-month{grid-template-columns:25px repeat(31,minmax(0,1fr));gap:1px}
+}
