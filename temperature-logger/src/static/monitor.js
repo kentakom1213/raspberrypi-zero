@@ -231,7 +231,13 @@ function createTimeChart(canvas, label, metric, unit) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: { mode: "nearest", intersect: false },
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      onHover(_event, elements, source) {
+        const point = elements.find((item) => item.datasetIndex === 0);
+        if (!point) return;
+        const time = source.data.datasets[0].data[point.index]?.time;
+        if (Number.isFinite(time)) queueSelection(time, true);
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -253,7 +259,8 @@ function createTimeChart(canvas, label, metric, unit) {
       },
     },
   });
-  chart.$comfort = { mode: "time", readings: [], gapMs: 5 * 60_000 };
+  chart.$field = metric;
+  chart.$comfort = { mode: "time", bands: [] };
   return chart;
 }
 function mixTimeColor(ratio) {
@@ -263,16 +270,7 @@ function mixTimeColor(ratio) {
   const values = start.map((v, i) => Math.round(v + (end[i] - v) * t));
   return `rgb(${values.join(",")})`;
 }
-function phaseBounds(rows) {
-  if (!rows.length) return { tMin: 16, tMax: 32, hMin: 25, hMax: 85 };
-  const ts = rows.map((row) => row.temperature);
-  const hs = rows.map((row) => row.humidity);
-  const tMin = Math.min(16, Math.floor((Math.min(...ts) - 1) / 2) * 2);
-  const tMax = Math.max(32, Math.ceil((Math.max(...ts) + 1) / 2) * 2);
-  const hMin = Math.max(0, Math.min(25, Math.floor((Math.min(...hs) - 4) / 5) * 5));
-  const hMax = Math.min(100, Math.max(85, Math.ceil((Math.max(...hs) + 4) / 5) * 5));
-  return { tMin, tMax, hMin, hMax };
-}
+
 function createPhaseChart(canvas) {
   const chart = new Chart(canvas, {
     type: "line",
